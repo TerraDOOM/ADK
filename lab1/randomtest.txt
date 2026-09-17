@@ -1,0 +1,21 @@
+unset
+set 809 968002
+set 561 718930
+unset
+set 434 719918
+get 686
+set 399 992162
+get 187
+unset
+get 767
+get 32
+set 63 805203
+set 498 642799
+set 273 448762
+unset
+set 541 747467
+set 571 313961
+max 948 984
+unset
+print
+maxininterval 564 1023

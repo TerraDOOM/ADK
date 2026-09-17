@@ -1,0 +1,24 @@
+get 599
+max 70 627
+set 3 896137
+get 412
+unset
+set 443 382257
+max 13 40
+get 940
+set 112 513025
+set 952 248479
+unset
+max 961 973
+max 81 573
+set 2 420576
+set 833 590815
+unset
+get 880
+unset
+unset
+set 298 824651
+set 752 537133
+unset
+print
+max 659 813

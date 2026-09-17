@@ -1,0 +1,9 @@
+get 670
+max 587 743
+set 341 652409
+max 927 965
+get 580
+unset
+set 0 541269
+print
+get 768
