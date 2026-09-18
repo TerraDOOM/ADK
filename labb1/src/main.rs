@@ -1,5 +1,5 @@
+use std::io::{Write, stdin, stdout};
 use std::{cmp, rc::Rc, todo};
-use std::io::{stdin,stdout,Write};
 
 #[derive(Debug)]
 struct Tree {
@@ -13,7 +13,10 @@ impl Tree {
         if self.root.is_none() {
             return -1;
         }
-        self.root.as_ref().unwrap().get(&mut Direction::to_direction(index, self.height))
+        self.root
+            .as_ref()
+            .unwrap()
+            .get(&Direction::to_direction(index, self.height))
     }
 
     pub fn set(&mut self, index: u32, value: i32) {
@@ -21,40 +24,51 @@ impl Tree {
         //construct the initial tree
         if self.root.is_none() {
             //if the index is zero, special case so we still have a branch node
-            println!("Creating initial root.");
+            eprintln!("Creating initial root.");
             if index == 0 {
-                self.root = Some(Rc::new(Node::one_branch(Rc::new(Node::leaf(value)), Direction::Left)));
+                self.root = Some(Rc::new(Node::one_branch(
+                    Rc::new(Node::leaf(value)),
+                    Direction::Left,
+                )));
+                self.height = 1;
                 return;
             }
-            println!("Initial size: {}", index.highest_one().unwrap() + 1);
+            eprintln!("Initial size: {}", index.highest_one().unwrap() + 1);
             //create all the branch nodes leading to our initial leaf
-            let mut directions = Direction::to_direction_reversed(index, index.highest_one().unwrap() + 1);
-            println!("Directions found to be: {:?}", directions);
+            let mut directions =
+                Direction::to_direction_reversed(index, index.highest_one().unwrap() + 1);
+            eprintln!("Directions found to be: {:?}", directions);
             self.height = directions.len() as u32;
             let mut cur = Node::leaf(value);
-            for d in 0..directions.len() {
-                println!("Creating initial node {}", d);
-                cur = Node::one_branch(Rc::new(cur), directions.pop().expect("Inappropriate list length in initialization of tree."));
+            for direction in directions {
+                eprintln!("Creating initial node {:?}", direction);
+                cur = Node::one_branch(
+                    Rc::new(cur),
+                    direction
+                );
             }
             self.root = Some(Rc::new(cur));
-            return
+            return;
         }
 
         //if the tree already exists, but isnt big enough, we need to extend it
         if self.height < index.highest_one().unwrap_or(0) + 1 {
             let diff = index.highest_one().unwrap_or(0) - self.height + 1;
-            println!("Sizing up tree... for difference of {}", diff);
+            eprintln!("Sizing up tree... for difference of {}", diff);
             for i in 0..diff {
-                println!("Adding node {}", i);
-                self.root = Some(Rc::new(Node::one_branch(self.root.clone().unwrap(), Direction::Left)))
+                eprintln!("Adding node {}", i);
+                self.root = Some(Rc::new(Node::one_branch(
+                    self.root.clone().unwrap(),
+                    Direction::Left,
+                )))
             }
-            println!("New height is {}", index.highest_one().unwrap_or(0) + 1);
+            eprintln!("New height is {}", index.highest_one().unwrap_or(0) + 1);
             self.height = index.highest_one().unwrap_or(0) + 1;
         }
 
         //and then we crawl through the tree, saving the nodes in a vec...
-        let mut directions = Direction::to_direction(index, self.height);
-        let mut modified_nodes = vec!();
+        let directions = Direction::to_direction(index, self.height);
+        let mut modified_nodes = vec![];
         let mut cur = self.root.clone().unwrap();
         for direction in directions {
             modified_nodes.push(cur.clone());
@@ -71,27 +85,36 @@ impl Tree {
 
         //and recreate those nodes in order, replacing the modified node as needed
         let mut cur = Node::leaf(value);
-        let mut directions = Direction::to_direction_reversed(index, self.height);
-        for _ in 0..modified_nodes.len() {
-            let template = modified_nodes.pop().expect("modified nodes list is fucked up");
-            let direction = directions.pop().expect("inappropriate direction list length when reconstructing modified nodes");
+        let mut directions = Direction::to_direction(index, self.height);
+        assert_eq!(directions.len(), modified_nodes.len());
+        for (template, direction) in modified_nodes.into_iter().zip(directions) {
             if direction == Direction::Left {
                 let right = template.right.clone();
-                let right_max = if template.right.is_none() {-1} else {template.right.as_ref().unwrap().max};
+                eprintln!("currently going left, adding right: {:?}", right);
+                let right_max = if template.right.is_none() {
+                    -1
+                } else {
+                    template.right.as_ref().unwrap().max
+                };
                 let cur_max = cur.max;
                 let new_node = Node {
                     left: Some(Rc::new(cur)),
-                    right: right,
+                    right,
                     max: cmp::max(cur_max, right_max),
                     height: template.height,
                 };
                 cur = new_node;
             } else {
                 let left = template.left.clone();
-                let left_max = if template.left.is_none() {-1} else {template.left.as_ref().unwrap().max};
+                eprintln!("currently going right, adding left: {:?}", left);
+                let left_max = if template.left.is_none() {
+                    -1
+                } else {
+                    template.left.as_ref().unwrap().max
+                };
                 let cur_max = cur.max;
                 let new_node = Node {
-                    left: left,
+                    left,
                     right: Some(Rc::new(cur)),
                     max: cmp::max(left_max, cur_max),
                     height: template.height,
@@ -106,11 +129,38 @@ impl Tree {
     }
 
     pub fn print_tree(&self) {
-        if self.root.is_none() {
-            println!("Tree is empty.");
-        } else {
-            self.root.as_ref().unwrap().print_node(0);
+        println!("height: {}", self.height);
+        fn p(a: &Option<Rc<Node>>, height: u32, mask: u32, index: u32) {
+            match a.as_deref() {
+                Some(Node { left: None, right: None, max: n, ..  }) => {
+                    for _ in 0..height {
+                        print!(" ");
+                    }
+                    println!("{index}: {n}");
+                }
+                Some(Node { left, right, .. }) => {
+                    for _ in 0..height {
+                        print!(" ");
+                    }
+                    println!(
+                        "(branch: {}-{})",
+                        index,
+                        index + (mask * 2).saturating_sub(1)
+                    );
+                    p(left, height + 2, mask >> 1, index);
+                    p(right, height + 2, mask >> 1, index + mask);
+                }
+                None => return,
+            }
         }
+
+        let mask = if self.height > 0 {
+            1 << self.height - 1
+        } else {
+            return;
+        };
+
+        p(&self.root, 0, mask, 0)
     }
 
     pub fn unset(&mut self) {
@@ -122,7 +172,7 @@ impl Tree {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum Direction {
     Left,
     Right,
@@ -131,25 +181,25 @@ enum Direction {
 impl Direction {
     //by default, popping will give you the top level direction - aka, the root
     pub fn to_direction(index: u32, height: u32) -> Vec<Direction> {
-        let mut direction_list = vec!();
-        println!("height: {}", height);
+        let mut direction_list = vec![];
+        eprintln!("height: {}", height);
         for i in (1..=height).rev() {
-            let cast_index = index & i*2 - 1;
-            if cast_index.highest_one() == Some(i-1) {
+            let cast_index = index & i * 2 - 1;
+            if cast_index.highest_one() == Some(i - 1) {
                 direction_list.push(Direction::Right);
-            } else if cast_index.highest_one().unwrap_or(0) > i-1 {
+            } else if cast_index.highest_one().unwrap_or(0) > i - 1 {
                 panic!("Logic error in direction-conversion code.")
             } else {
                 direction_list.push(Direction::Left);
             }
-        };
+        }
         direction_list.into_iter().rev().collect()
     }
 
     //sometimes, though, you want to have the directions starting from the leaf
     pub fn to_direction_reversed(index: u32, height: u32) -> Vec<Direction> {
         let direction_list = Direction::to_direction(index, height);
-        println!("Reversing direction of list: {:?}.", direction_list);
+        eprintln!("Reversing direction of list: {:?}.", direction_list);
         direction_list.into_iter().rev().collect()
     }
 }
@@ -186,13 +236,11 @@ impl Node {
     pub fn one_branch(node: Rc<Node>, direction: Direction) -> Self {
         let max = node.max;
         let height = node.height + 1;
-        let left: Option<Rc<Node>>;
-        let right: Option<Rc<Node>>;
-        if direction == Direction::Left {
-            (left, right) = (Some(node), None);
+        let (left, right) = if direction == Direction::Left {
+            (Some(node), None)
         } else {
-            (left, right) = (None, Some(node));
-        }
+            (None, Some(node))
+        };
         Node {
             left: left,
             right: right,
@@ -200,12 +248,14 @@ impl Node {
             height: height,
         }
     }
-    
-    pub fn get(&self, directions: &mut Vec<Direction>) -> i32 {
+
+    pub fn get(&self, directions: &[Direction]) -> i32 {
         if self.height == 0 {
             self.max
         } else {
-            let direction = directions.pop().expect("Direction list in get is inappropriate length.");
+            let (&direction, directions) = directions
+                .split_last()
+                .expect("Direction list in get is inappropriate length.");
             if direction == Direction::Right && !self.right.is_none() {
                 self.right.as_ref().unwrap().get(directions)
             } else if direction == Direction::Left && !self.left.is_none() {
@@ -220,7 +270,7 @@ impl Node {
         for _ in 0..depth {
             print!("  ");
         }
-        println!("max: {}", self.max);
+        eprintln!("max: {}", self.max);
         if !self.right.is_none() {
             self.right.as_ref().unwrap().print_node(depth + 1);
         }
@@ -242,8 +292,6 @@ impl Node {
     }
 }
 
-
-
 fn main() {
     let mut tree = Tree {
         root: None,
@@ -251,34 +299,44 @@ fn main() {
         history: vec![],
     };
     loop {
-        let mut s=String::new();
-        let _=stdout().flush();
-        stdin().read_line(&mut s).expect("Did not enter a correct string");
-        if let Some('\n')=s.chars().next_back() {
+        let mut s = String::new();
+        let _ = stdout().flush();
+        stdin()
+            .read_line(&mut s)
+            .expect("Did not enter a correct string");
+        if let Some('\n') = s.chars().next_back() {
             s.pop();
         }
-        if let Some('\r')=s.chars().next_back() {
+        if let Some('\r') = s.chars().next_back() {
             s.pop();
         }
         let command: Vec<&str> = s.split(' ').collect();
-        println!("commands detected: {:?}", command);
+        // eprintln!("commands detected: {:?}", command);
         match command[0] {
-            "get" => { 
-                println!("{}", tree.get(str::parse::<u32>(command[1]).unwrap())); 
+            "get" => {
+                eprintln!("{}", tree.get(str::parse::<u32>(command[1]).unwrap()));
             }
-            "set" => { 
-                tree.set(str::parse::<u32>(command[1]).unwrap(), str::parse::<i32>(command[2]).unwrap()); 
+            "set" => {
+                tree.set(
+                    str::parse::<u32>(command[1]).unwrap(),
+                    str::parse::<i32>(command[2]).unwrap(),
+                );
             }
-            "unset" => { tree.unset(); }
-            "max" => { tree.max(); }
-            "print" => { 
-                println!("{:?}", tree);
+            "unset" => {
+                tree.unset();
+            }
+            "max" => {
+                tree.max();
+            }
+            "print" => {
                 tree.print_tree();
             }
-            "quit" => { break; }
-            _ => { println!("wrong") }
+            "quit" => {
+                break;
+            }
+            _ => {
+                eprintln!("wrong")
+            }
         }
     }
 }
-
-

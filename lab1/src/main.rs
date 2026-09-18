@@ -1,9 +1,12 @@
+mod fast;
+
 // -*- lexical-binding: t; -*-
 use std::{
     cmp,
     collections::BTreeMap,
-    fmt::{self, Debug},
+    fmt::{self, Debug, Display},
     io::{self, Write},
+    iter::Zip,
     mem,
     rc::Rc,
 };
@@ -15,6 +18,21 @@ enum Node {
         right: Option<Rc<Node>>,
         max: i32,
     },
+}
+
+impl Node {
+    fn right(&self) -> Option<Rc<Node>> {
+        match self {
+            Node::Branch { right, .. } => right.clone(),
+            _ => None,
+        }
+    }
+    fn left(&self) -> Option<Rc<Node>> {
+        match self {
+            Node::Branch { left, .. } => left.clone(),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Debug for Node {
@@ -57,47 +75,77 @@ fn lmao(n: &mut i32) {
     }
 }
 
-fn set(array: &Array, i: u32, e: i32) -> Array {
-    let tgt_height_mask = if i > 0 {
-        1 << 31 - i.leading_zeros()
-    } else {
-        0
-    };
-    let current_height_mask = match array.height {
-        0 => 0,
-        1 => 1,
-        h => 1 << h - 1,
-    };
-    let mask = cmp::max(tgt_height_mask, current_height_mask);
-    if tgt_height_mask > current_height_mask {
-        if cfg!(debug_assertions) && !cfg!(test) {
-            eprintln!("adding more layers to tree");
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Direction {
+    Left,
+    Right,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Directions {
+    i: u32,
+    mask: u32,
+}
+
+impl Display for Directions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.clone().collect::<Vec<_>>())
+    }
+}
+
+impl Directions {
+    fn new(index: u32, height: u32) -> Self {
+        Directions {
+            i: index,
+            mask: if height == 0 { 0 } else { 1 << height - 1 },
         }
-        let mut cur = array.root.clone();
-        let max = get_max(&array.root);
-        let mut cur_height = current_height_mask;
-        while cur_height << 1 < tgt_height_mask {
-            cur = Some(Rc::new(Node::Branch {
-                left: cur,
-                right: None,
-                max,
-            }));
-            if cur_height == 0 {
-                cur_height = 1;
+    }
+}
+
+impl Iterator for Directions {
+    type Item = Direction;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.mask == 0 {
+            None
+        } else {
+            let dir = self.i & self.mask;
+            self.mask >>= 1;
+            Some(if dir > 0 {
+                Direction::Right
             } else {
-                cur_height <<= 1;
+                Direction::Left
+            })
+        }
+    }
+}
+
+fn set(array: &Array, i: u32, e: i32) -> Array {
+    let tgt_height = array.height.max(32 - i.leading_zeros());
+    if tgt_height > array.height {
+        let mut directions = Directions::new(i, tgt_height);
+        assert_eq!(
+            directions.next(),
+            Some(Direction::Right),
+            "First direction was somehow left"
+        );
+        let right = set_helper(None, &mut directions, e);
+        let mut left = array.root.clone();
+        for _ in array.height..tgt_height - 1 {
+            if left.is_some() {
+                left = branch(left, None);
             }
         }
-        let root = branch(cur, set_helper(None, i, e, mask >> 1));
+        let root = branch(left, right);
+
         Array {
             root,
-            height: 32 - tgt_height_mask.leading_zeros(),
+            height: tgt_height,
         }
     } else {
-        let root = set_helper(array.root.clone(), i, e, mask);
+        let mut directions = Directions::new(i, tgt_height);
+        let root = set_helper(array.root.clone(), &mut directions, e);
         Array {
             root,
-            height: cmp::max(array.height, 32 - i.leading_zeros()),
+            height: tgt_height,
         }
     }
 }
@@ -111,34 +159,22 @@ fn leaf(n: i32) -> Option<Rc<Node>> {
     Some(Rc::new(Node::Leaf(n)))
 }
 
-fn set_helper(node: Option<Rc<Node>>, i: u32, e: i32, mask: u32) -> Option<Rc<Node>> {
-    if cfg!(debug_assertions) && !cfg!(test) {
-        eprintln!("set_helper: {node:?}, {i}, {e}, {mask:0b}");
-    }
-    let rec = move |n| set_helper(n, i, e, mask >> 1);
-    if mask == 0 {
-        return leaf(e);
-    }
-    let direction = i & mask > 0;
-    match node.as_deref() {
-        None => {
-            let new_node = rec(None);
-            let (left, right) = if direction {
-                (None, new_node)
-            } else {
-                (new_node, None)
-            };
-            return branch(left, right);
+fn set_helper(node: Option<Rc<Node>>, directions: &mut Directions, e: i32) -> Option<Rc<Node>> {
+    let dir = directions.next();
+    let mut rec = move |n| set_helper(n, directions, e);
+    match (node.as_deref(), dir) {
+        (Some(Node::Leaf(_)) | None, None) => leaf(e),
+        (None, Some(Direction::Right)) => branch(None, rec(None)),
+        (None, Some(Direction::Left)) => branch(rec(None), None),
+        (Some(Node::Branch { left, right, .. }), Some(Direction::Left)) => {
+            branch(rec(left.clone()), right.clone())
         }
-        Some(Node::Branch { left, right, .. }) => {
-            let (left, right) = if direction {
-                (left.clone(), rec(right.clone()))
-            } else {
-                (rec(left.clone()), right.clone())
-            };
-            return branch(left, right);
+        (Some(Node::Branch { left, right, .. }), Some(Direction::Right)) => {
+            branch(left.clone(), rec(right.clone()))
         }
-        Some(Node::Leaf(_)) => unreachable!("Unexpected leaf node"),
+
+        (Some(Node::Leaf(_)), Some(_)) => unreachable!("Unexpected leaf node"),
+        (Some(Node::Branch { .. }), None) => unreachable!("Unexpected end of direction list"),
     }
 }
 
@@ -159,7 +195,9 @@ fn get(array: &Array, i: u32) -> Option<i32> {
                 Node::Leaf(i) => *i,
                 _ => panic!("unexpected branch node with height 0 tree"),
             });
-        } else { return None }
+        } else {
+            return None;
+        }
     };
     if i > 2 * mask - 1 {
         return None;
@@ -178,42 +216,48 @@ fn get(array: &Array, i: u32) -> Option<i32> {
     }
 }
 
-fn maxininterval(array: &Array, min: u32, max: u32) -> Option<i32> {
-    let mask = match array.height {
-        0 => 0,
-        1 => 1,
-        h => 1 << h - 1,
-    };
-    if min > max || array.root.is_none() || min > 2 * mask - 1 {
+fn maxininterval(array: &Array, min: u32, mut max: u32) -> Option<i32> {
+    if min > max {
         return None;
     }
-
-    match (max >= 2 * mask - 1, min == 0) {
-        (true, true) => treemax(&array.root),
-        (false, true) => maxright(&array.root, max, mask),
-        (true, false) => maxleft(&array.root, min, mask),
-        (false, false) => maxininterval_rec(&array.root, min, max, mask),
+    if max >= (1 << array.height) {
+        max = (1 << array.height) - 1;
+        if min >= (1 << array.height) {
+            return None;
+        }
     }
+
+    let mut dirs = (
+        Directions::new(min, array.height),
+        Directions::new(max, array.height),
+    );
+
+    maxininterval_rec(array.root.clone(), &mut dirs)
 }
 
-fn maxininterval_rec(node: &Option<Rc<Node>>, lo: u32, hi: u32, mask: u32) -> Option<i32> {
-    if cfg!(debug_assertions) && !cfg!(test) {
-        eprintln!("lo: {lo}, hi: {hi}, treemax({:?})", treemax(node));
-    }
+fn maxininterval_rec(
+    node: Option<Rc<Node>>,
+    directions: &mut (Directions, Directions),
+) -> Option<i32> {
     match node.as_deref()? {
         Node::Leaf(n) => Some(*n),
         Node::Branch { left, right, .. } => {
-            let hi_direction = hi & mask > 0;
-            let lo_direction = lo & mask > 0;
-            match (hi_direction, lo_direction) {
-                (true, false) => {
-                    let right = maxright(right, hi, mask >> 1);
-                    let left = maxleft(left, lo, mask >> 1);
+            match (
+                directions.0.next().expect("glorp"),
+                directions.1.next().expect("gleeble"),
+            ) {
+                (Direction::Left, Direction::Right) => {
+                    let right = maxright(right, &mut directions.1);
+                    let left = maxleft(left, &mut directions.0);
                     cmp::max(left, right)
                 }
-                (true, true) => maxininterval_rec(right, lo, hi, mask >> 1),
-                (false, false) => maxininterval_rec(left, lo, hi, mask >> 1),
-                (false, true) => panic!("wtf"),
+                (Direction::Right, Direction::Right) => {
+                    maxininterval_rec(right.clone(), directions)
+                }
+                (Direction::Left, Direction::Left) => maxininterval_rec(left.clone(), directions),
+                (Direction::Right, Direction::Left) => {
+                    panic!("Min told us to go right, max told us to go left???")
+                }
             }
         }
     }
@@ -226,76 +270,38 @@ fn treemax(node: &Option<Rc<Node>>) -> Option<i32> {
     })
 }
 
-fn maxleft(node: &Option<Rc<Node>>, lo: u32, mask: u32) -> Option<i32> {
-    if cfg!(debug_assertions) && !cfg!(test) {
-        eprintln!("(maxleft) lo: {lo:b}, mask: {mask:b}");
-    }
+fn maxleft(node: &Option<Rc<Node>>, directions: &mut Directions) -> Option<i32> {
     match node.as_deref()? {
         Node::Leaf(n) => Some(*n),
         Node::Branch { left, right, .. } => {
-            let direction = lo & mask > 0;
-            if direction {
-                maxleft(right, lo, mask >> 1)
-            } else {
-                let cont = maxleft(left, lo, mask >> 1);
-                cmp::max(cont, treemax(right))
+            match directions
+                .next()
+                .expect("directions have ended unexpectedly")
+            {
+                Direction::Right => maxleft(right, directions),
+                Direction::Left => maxleft(left, directions).max(treemax(right)),
             }
         }
     }
 }
-fn maxright(node: &Option<Rc<Node>>, hi: u32, mask: u32) -> Option<i32> {
-    if cfg!(debug_assertions) && !cfg!(test) {
-        eprintln!("(maxright) hi: {hi:b}, mask: {mask:b}");
-    }
+fn maxright(node: &Option<Rc<Node>>, directions: &mut Directions) -> Option<i32> {
     match node.as_deref()? {
         Node::Leaf(n) => Some(*n),
         Node::Branch { left, right, .. } => {
-            let direction = hi & mask > 0;
-            if direction {
-                let cont = maxright(right, hi, mask >> 1);
-                cmp::max(cont, treemax(left))
-            } else {
-                maxright(left, hi, mask >> 1)
+            match directions
+                .next()
+                .expect("directions have ended unexpectedly")
+            {
+                Direction::Left => maxright(left, directions),
+                Direction::Right => maxright(right, directions).max(treemax(left)),
             }
         }
     }
 }
 
 struct Set(u32, i32);
-#[derive(Default)]
-struct ArrayButLmao {
-    sets: Vec<Set>,
-    map: BTreeMap<u32, i32>,
-}
 
-impl ArrayButLmao {
-    fn new() -> Self {
-        Default::default()
-    }
-    fn set(&mut self, i: u32, e: i32) {
-        self.sets.push(Set(i, e));
-        self.map.insert(i, e);
-    }
-    fn get(&self, i: u32) -> Option<i32> {
-        self.map.get(&i).copied()
-    }
-    fn unset(&mut self) {
-        if let Some(Set(i, _)) = self.sets.pop() {
-            self.map.remove(&i);
-            for &Set(j, e) in self.sets.iter().rev() {
-                if i == j {
-                    self.map.insert(i, e);
-                    break;
-                }
-            }
-        }
-    }
-    fn maxininterval(&mut self, lo: u32, hi: u32) -> Option<i32> {
-        self.map.range(lo..=hi).map(|(_, &e)| e).max()
-    }
-}
-
-fn main() -> io::Result<()> {
+fn main() {
     let stdin = io::stdin();
     let getline = || -> io::Result<String> {
         let mut s = String::new();
@@ -307,28 +313,21 @@ fn main() -> io::Result<()> {
     let uint = |s: &str| s.parse::<u32>().ok();
     let mut past = Vec::new();
     let mut array = newarray();
-    let mut good_array = ArrayButLmao::new();
 
-    while let Ok(line) = {
-        // eprint!("> ");
-        getline()
-    } {
+    while let Ok(line) = { getline() } {
         if line.is_empty() {
             break;
         }
-        // println!("> {line}");
         let split = line.split_whitespace().collect::<Vec<_>>();
         match &split[..] {
             ["get", i] => {
                 let Some(i) = uint(i) else { continue };
-                eprintln!("reference answer: {}", good_array.get(i).unwrap_or(0));
                 println!("{}", get(&array, i).unwrap_or(0));
             }
             ["set", i] => {
                 let Some(i) = uint(i) else { continue };
                 let newarray = set(&array, i, i as i32);
                 past.push(mem::replace(&mut array, newarray));
-                good_array.set(i, i as i32);
             }
             ["set", i, e] => {
                 let Some(i) = uint(i) else { continue };
@@ -336,12 +335,11 @@ fn main() -> io::Result<()> {
                 dbg!((i, e));
                 let newarray = set(&array, i, e as i32);
                 past.push(mem::replace(&mut array, newarray));
-                good_array.set(i, e as i32);
             }
             ["unset"] => {
-                let last = past.pop().unwrap_or(newarray());
-                array = last;
-                good_array.unset();
+                let mut last = past.pop().unwrap_or(newarray());
+                mem::swap(&mut last, &mut array);
+                mem::forget(last);
             }
             ["maxininterval" | "max", lo, hi] => {
                 let Some(lo) = uint(lo) else {
@@ -349,10 +347,6 @@ fn main() -> io::Result<()> {
                 };
                 let Some(hi) = uint(hi) else { continue };
                 println!("{}", maxininterval(&array, lo, hi).unwrap_or(0));
-                eprintln!(
-                    "reference answer: {}",
-                    good_array.maxininterval(lo, hi).unwrap_or(0)
-                );
             }
             ["print", ..] => {
                 print_tree(&array);
@@ -361,8 +355,6 @@ fn main() -> io::Result<()> {
             _ => continue,
         }
     }
-
-    Ok(())
 }
 
 fn print_tree(array: &Array) {
@@ -405,6 +397,39 @@ mod tests {
     use super::*;
     use rand::prelude::*;
 
+    #[derive(Default)]
+    struct ArrayButLmao {
+        sets: Vec<Set>,
+        map: BTreeMap<u32, i32>,
+    }
+
+    impl ArrayButLmao {
+        fn new() -> Self {
+            Default::default()
+        }
+        fn set(&mut self, i: u32, e: i32) {
+            self.sets.push(Set(i, e));
+            self.map.insert(i, e);
+        }
+        fn get(&self, i: u32) -> Option<i32> {
+            self.map.get(&i).copied()
+        }
+        fn unset(&mut self) {
+            if let Some(Set(i, _)) = self.sets.pop() {
+                self.map.remove(&i);
+                for &Set(j, e) in self.sets.iter().rev() {
+                    if i == j {
+                        self.map.insert(i, e);
+                        break;
+                    }
+                }
+            }
+        }
+        fn maxininterval(&mut self, lo: u32, hi: u32) -> Option<i32> {
+            self.map.range(lo..=hi).map(|(_, &e)| e).max()
+        }
+    }
+
     #[derive(Copy, Clone)]
     enum Instruction {
         Set(u32, i32),
@@ -422,8 +447,6 @@ mod tests {
             }
         }
     }
-
-
 
     macro_rules! c {
         (set $i:literal $e:literal) => {
@@ -443,6 +466,7 @@ mod tests {
         };
     }
 
+    #[inline(never)]
     fn compare_reference_to_actual(instructions: &[Instruction]) {
         let mut past = Vec::new();
         let mut array = newarray();
@@ -466,8 +490,9 @@ mod tests {
                     }
                 }
                 Instruction::Unset => {
-                    let last = past.pop().unwrap_or(newarray());
-                    array = last;
+                    let mut last = past.pop().unwrap_or(newarray());
+                    mem::swap(&mut last, &mut array);
+                    mem::forget(last);
                     good_array.unset();
                 }
                 Instruction::Max(lo, hi) => {
@@ -486,6 +511,38 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[inline(never)]
+    fn generate_random_test(rng: &mut StdRng, n: usize) -> Vec<Instruction> {
+        let mut v = vec![];
+        let mut current_indices = vec![];
+        for _ in 0..n {
+            match rng.random_range(0..7) {
+                0 | 4 | 5 => {
+                    let a = rng.random_range(0..1024);
+                    let b = rng.random_range(0..1_000_000);
+
+                    v.push(Instruction::Set(a, b));
+                    current_indices.push(a);
+                }
+                1 => {
+                    v.push(Instruction::Unset);
+                    current_indices.pop();
+                }
+                2 => v.push(Instruction::Get(rng.random_range(0..1024))),
+                3 => {
+                    let lo = rng.random_range(0..1023);
+                    let hi = rng.random_range(lo..1024);
+                    v.push(Instruction::Max(lo, hi));
+                }
+                6 if current_indices.len() != 0 => v.push(Instruction::Get(
+                    current_indices[rng.random_range(0..current_indices.len())],
+                )),
+                _ => continue,
+            }
+        }
+        v
     }
 
     #[test]
@@ -526,8 +583,8 @@ mod tests {
     #[test]
     fn small_random() {
         const N: u32 = 100;
-        let mut rng = StdRng::seed_from_u64(420);
 
+        let mut rng = StdRng::seed_from_u64(42069);
         let mut v = vec![];
 
         for _ in 0..N {
@@ -552,37 +609,15 @@ mod tests {
 
     #[test]
     fn bigger_random() {
-        const N: u32 = 1000;
-        const M: u32 = 1000;
-        let mut rng = StdRng::seed_from_u64(420);
+        const N: usize = 100_000;
+        const M: usize = 10;
+        let mut rng = StdRng::seed_from_u64(42069);
 
         for m in 0..M {
-            let mut v = vec![];
-
             println!("running test {m}");
 
-            for _ in 0..N {
-                match rng.random_range(0..6) {
-                    0 | 4 | 5 => v.push(Instruction::Set(
-                        rng.random_range(0..1024),
-                        rng.random_range(0..1_000_000),
-                    )),
-                    1 => v.push(Instruction::Unset),
-                    2 => v.push(Instruction::Get(rng.random_range(0..1024))),
-                    3 => {
-                        let lo = rng.random_range(0..1023);
-                        let hi = rng.random_range(lo..1024);
-                        v.push(Instruction::Max(lo, hi));
-                    }
-                    _ => panic!(),
-                }
-            }
+            let v = generate_random_test(&mut rng, N);
 
-            if m == 936 {
-                for i in &v {
-                    println!("{:?}", i);
-                }
-            }
             compare_reference_to_actual(&v[..]);
         }
     }
