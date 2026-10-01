@@ -1,0 +1,5 @@
+run histories with large indata 3
+
+- rust version with somewhat optimized levenshtein: 25.13 ms
+- vanilla run: 4m25s
+- good levenshtein: 117 ms
