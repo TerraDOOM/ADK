@@ -57,6 +57,9 @@ trait Metric {
     // should be like f64 for generic metrics but we don't need that
     // for this assignment
     fn distance(&self, other: &Self) -> usize;
+    fn distance_max(&self, other: &Self, _max: usize) -> usize {
+        self.distance(other)
+    }
 }
 
 impl Metric for str {
@@ -101,7 +104,7 @@ fn build_node<'a, T: Metric>(s: &'a mut [T]) -> VPNode<'a, T> {
 
     let random_partition = random_range(0..s.len());
     s.swap(0, random_partition);
-    let mut ret = false;
+    let mut ret;
     {
         let (first, rest) = s.split_first_mut().expect("Array was too small");
         partition(first, rest);
@@ -242,7 +245,7 @@ fn edit_dist<'a>(mut s: &'a str, mut t: &'a str) -> usize {
     lev.cur[n]
 }
 
-fn edit_dist_max<'a>(mut s: &'a str, mut t: &'a str, max: usize) -> usize {
+fn edit_dist_max<'a>(mut s: &'a str, mut t: &'a str, k: usize) -> usize {
     static LEV: LazyLock<RwLock<Lev>> = LazyLock::new(|| RwLock::new(Lev::default()));
 
     let mut _lev = LEV.write().expect("poison isn't real");
@@ -263,6 +266,7 @@ fn edit_dist_max<'a>(mut s: &'a str, mut t: &'a str, max: usize) -> usize {
     for (i, s_i) in s.chars().enumerate() {
         let i = i + 1;
         lev.cur[0] = i;
+        let mut min_row = i;
         for (j, t_j) in t.chars().enumerate() {
             let j = j + 1;
             let cost = if s_i == t_j { 0 } else { 1 };
@@ -270,9 +274,6 @@ fn edit_dist_max<'a>(mut s: &'a str, mut t: &'a str, max: usize) -> usize {
             lev.cur[j] = (lev.last[j] + 1)
                 .min(lev.cur[j - 1] + 1)
                 .min(lev.last[j - 1] + cost);
-        }
-        if lev.cur[n] > max {
-            return usize::MAX;
         }
         if i != m {
             lev.swap();
@@ -282,6 +283,8 @@ fn edit_dist_max<'a>(mut s: &'a str, mut t: &'a str, max: usize) -> usize {
 }
 
 fn main() {
+    let start_linear = Instant::now();
+
     let mut f = File::open("large/testmedordlista3.indata").expect("lol");
     // let mut f = io::stdin().lock();
     let mut s = String::new();
@@ -297,7 +300,12 @@ fn main() {
     }
 
     let dict2 = dictionary.clone();
-    let vp = VPTree::new(&mut dictionary[..]);
+    let start = Instant::now();
+    // let vp = VPTree::new(&mut dictionary[..]);
+    println!(
+        "building vp tree took {:.2} ms",
+        Instant::now().duration_since(start).as_secs_f64() * 1000.0
+    );
 
     // println!("{vp:#?}");
 
@@ -306,14 +314,13 @@ fn main() {
     for line in &mut lines {
         let mut min_dist = 1000;
 
-        let start_vp = Instant::now();
-        let mut vp_res = vp.search(&line);
-        println!(
-            "vp took {:.2} ms",
-            Instant::now().duration_since(start_vp).as_secs_f64() * 1000.0
-        );
+        // let start_vp = Instant::now();
+        // let mut vp_res = vp.search(&line);
+        // println!(
+        //     "vp took {:.2} ms",
+        //     Instant::now().duration_since(start_vp).as_secs_f64() * 1000.0
+        // );
 
-        let start_linear = Instant::now();
         for word in &dict2 {
             let dist = edit_dist_max(word, line, min_dist);
             if dist < min_dist {
@@ -324,14 +331,15 @@ fn main() {
                 v.push(word);
             }
         }
-        println!(
-            "linear took {:.2} ms",
-            Instant::now().duration_since(start_linear).as_secs_f64() * 1000.0
-        );
 
-        print_results(line, line.distance(vp_res[0]), &mut vp_res);
+
+        // print_results(line, line.distance(vp_res[0]), &mut vp_res);
         print_results(line, min_dist, &mut v);
     }
+    println!(
+        "linear took {:.2} ms",
+        Instant::now().duration_since(start_linear).as_secs_f64() * 1000.0
+    );
 }
 
 fn print_results(line: &str, min_dist: usize, v: &mut Vec<&&str>) {
