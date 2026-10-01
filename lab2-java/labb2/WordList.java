@@ -20,10 +20,15 @@ public class WordList {
         }
     }
 
-    public int getWordsOfSize(int size) {
+    public int findClosestWordSize(int size) {
+        int maxSize = words.get(words.size() - 1).length();
+        if (maxSize <= size) {
+            return maxSize;
+        }
+
         for (int i = 0; i < offsets.size(); i++) {
-            if (words.get(offsets.get(i)).length() > size) {
-                return offsets.get(i) - offsets.get(i - 1);
+            if (words.get(offsets.get(i)).length() >= size) {
+                return words.get(offsets.get(i)).length();
             }
         }
         return 0;

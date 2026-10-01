@@ -10,12 +10,12 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
-import java.util.ArrayList;
 import java.util.List;
 
 public class Main {
 
     public static final String DEFAULT_DIR = "./test";
+    public static final boolean PRINT_TIMINGS = false;
 
     public static WordList readWordList(BufferedReader input) throws IOException {
         ArrayList<String> list = new ArrayList<String>();
@@ -30,21 +30,6 @@ public class Main {
         return wordList;
     }
 
-    public static Trie buildTrie(WordList list) {
-        return new Trie(list.words);
-    }
-
-    public static int[] search(TrieNode node, String word, char letter, int[] lastState) {
-        int[] currentRow = new int[lastState.length];
-
-    }
-
-    public static ArrayList<String> match(Trie trie, String word, int dist) {
-        var automaton = new LevAutomaton(word, curDist);
-        var state = automaton.init();
-        var matches = new ArrayList<TrieNode>();
-        var trieHistory = new ArrayList<TrieNode>();
-    }
 
     public static void main(String args[]) throws IOException {
         if (parseArgs(args)) {
@@ -55,18 +40,21 @@ public class Main {
         // Säkrast att specificera att UTF-8 ska användas, för vissa system har annan
         // standardinställning för teckenkodningen.
         WordList wordList = readWordList(stdin);
-        Trie trie = buildTrie(wordList);
         String word;
+        ClosestWords closestWords = new ClosestWords(wordList);
+        if (PRINT_TIMINGS) System.out.println("built trie in " + (System.currentTimeMillis() - t1) + " ms");
+        if (PRINT_TIMINGS) closestWords.trie.root.print();
         while ((word = stdin.readLine()) != null) {
-            ClosestWords closestWords = new ClosestWords(word, wordList.words);
+            long innerTime = System.currentTimeMillis();
+            closestWords.findMinWords(word);
+            if (PRINT_TIMINGS) System.out.println("found solutions for " + word + " in " + (System.currentTimeMillis() - innerTime) + " ms");
             System.out.print(word + " (" + closestWords.getMinDistance() + ")");
             for (String w : closestWords.getClosestWords())
                 System.out.print(" " + w);
             System.out.println();
         }
         long tottime = (System.currentTimeMillis() - t1);
-        System.out.println("CPU time: " + tottime + " ms");
-
+        if (PRINT_TIMINGS) System.out.println("total CPU time: " + tottime + " ms");
     }
 
     private static boolean parseArgs(String[] args) {
@@ -136,17 +124,19 @@ public class Main {
         }
         // Säkrast att specificera att UTF-8 ska användas, för vissa system har annan
         // standardinställning för teckenkodningen.
-        List<String> wordList = null;
+        WordList wordList = null;
         try {
-            wordList = readWordList(inFile).words;
+            wordList = readWordList(inFile);
         } catch (Exception e) {
             System.out.println("Could not read the wordList of this testcase.");
             System.exit(1);
         }
         String word;
         try {
+            ClosestWords closestWords = new ClosestWords(wordList);
+
             while ((word = inFile.readLine()) != null) {
-                ClosestWords closestWords = new ClosestWords(word, wordList);
+                closestWords.findMinWords(word);
                 String answerLine;
                 if ((answerLine = ansFile.readLine()) == null) {
                     System.err.println("The file " + ans + " ran out of answers but there were questions left in " + in + ".");

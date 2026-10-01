@@ -1,17 +1,37 @@
-import java.util.ArrayList;
+import java.util.HashMap;
 
 public class TrieNode {
-    public char prefix;
+    public char[] prefixes = null;
+    public TrieNode[] children = null;
     public String terminal = null;
-    public ArrayList<TrieNode> children;
 
     public TrieNode(String s, String word) {
-        prefix = s.charAt(0);
-        children = new ArrayList<TrieNode>();
-        if (s.length() > 1) {
-            children.add(new TrieNode(s.substring(1), word));
+        if (s.length() > 0) {
+            children = new TrieNode[]{new TrieNode(s.substring(1), word)};
+            prefixes = new char[]{s.charAt(0)};
         } else {
             terminal = word;
+        }
+    }
+
+    public void print() {
+        print(0);
+    }
+
+    public void print(int indent) {
+        if (terminal != null) {
+            for (int i = 0; i < indent; i++) {
+                System.out.print("  ");
+            }
+
+            System.out.println(terminal);
+        }
+        for (int i = 0; i < prefixes.length; i++) {
+            for (int j = 0; j < indent; j++) {
+                System.out.print("  ");
+            }
+            System.out.println(prefixes[i]);
+            entry.getValue().print(indent + 1);
         }
     }
 
@@ -21,24 +41,23 @@ public class TrieNode {
             return;
         }
         char c = s.charAt(0);
-        for (int i = 0; i < children.size(); i++) {
-            if (children.get(i).prefix == c) {
-                var node = children.get(i);
-                node.add(s.substring(1), word);
+        for (var entry : children.entrySet()) {
+            if (entry.getKey() == c) {
+                entry.getValue().add(s.substring(1), word);
                 return;
             }
         }
-        children.add(new TrieNode(s, word));
+        children.put(s.charAt(0), new TrieNode(s.substring(1), word));
     }
 
-    public ArrayList<TrieNode> get(String prefix) {
+    public TrieNode get(String prefix) {
         if (prefix.isEmpty()) {
-            return children;
+            return this;
         }
         char c = prefix.charAt(0);
-        for (var child : children) {
-            if (child.prefix == c) {
-                return child.get(prefix.substring(1));
+        for (var child : children.entrySet()) {
+            if (child.getKey() == c) {
+                return child.getValue();
             }
         }
         return null;
