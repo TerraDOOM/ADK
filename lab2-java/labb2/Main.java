@@ -7,10 +7,14 @@ import java.io.IOException;
 import java.io.File;
 import java.io.FileReader;
 import java.io.InputStreamReader;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Random;
 
 public class Main {
 
@@ -43,7 +47,7 @@ public class Main {
         String word;
         ClosestWords closestWords = new ClosestWords(wordList);
         if (PRINT_TIMINGS) System.out.println("built trie in " + (System.currentTimeMillis() - t1) + " ms");
-        if (PRINT_TIMINGS) closestWords.trie.root.print();
+        if (PRINT_TIMINGS && wordList.words.size() < 20) closestWords.trie.root.print();
         while ((word = stdin.readLine()) != null) {
             long innerTime = System.currentTimeMillis();
             closestWords.findMinWords(word);
@@ -57,15 +61,37 @@ public class Main {
         if (PRINT_TIMINGS) System.out.println("total CPU time: " + tottime + " ms");
     }
 
+
     private static boolean parseArgs(String[] args) {
         boolean inTestZone = false;
         boolean beenInTestZone = false;
+        boolean testRandom = false;
+        boolean parseFile = false;
+        String filename = null;
         int finishedTestBatches = 0;
+        int testsToRun = 100;
         if (args.length >= 1) {
             for (String current: args) {
                 if (current.equals("-t")) {
                     inTestZone = true;
                     beenInTestZone = true;
+                    continue;
+                }
+                if (current.equals("-r")) {
+                    testRandom = true;
+                    continue;
+                }
+                if (current.equals("-f")) {
+                    parseFile = true;
+                    continue;
+                }
+                if (parseFile) {
+                    filename = current;
+                    parseFile = false;
+                    continue;
+                }
+                if (testRandom) {
+                    testsToRun = Integer.parseInt(current);
                     continue;
                 }
                 if (inTestZone) {
@@ -78,12 +104,52 @@ public class Main {
                 }
             }
         }
+        if (testRandom) {
+            try {
+                BufferedReader file;
+                if (filename != null) {
+                    file = new BufferedReader(new InputStreamReader(new FileInputStream(filename), "UTF-8"));
+                } else {
+                    file = new BufferedReader(new InputStreamReader(System.in, "UTF-8"));
+                }
+                runRandomizedTests(testsToRun, file);
+            } catch (IOException fuckthislanguage) {}
+            return true;
+        }
         if(beenInTestZone && finishedTestBatches == 0) {
             runTestsInCatalogue(DEFAULT_DIR);
             finishedTestBatches++;
         }
         return finishedTestBatches > 0;
     }
+
+    public static void runRandomizedTests(int count, BufferedReader in) throws IOException {
+
+        // Säkrast att specificera att UTF-8 ska användas, för vissa system har annan
+        // standardinställning för teckenkodningen.
+        WordList wordList = readWordList(in);
+        ClosestWords closestWords = new ClosestWords(wordList);
+        Random rng = new Random();
+        char[] letters = {'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z','å','ä','ö'};
+
+        for (int i = 0; i < count; i++) {
+            int selectedWord = rng.nextInt(wordList.words.size());
+            String word = wordList.words.get(selectedWord);
+            StringBuilder sb = new StringBuilder(word);
+            for (int j = 0; j < 4; j++) {
+                int pos = rng.nextInt(word.length());
+                char newLetter = letters[rng.nextInt(letters.length)];
+                sb.replace(pos, pos+1, String.valueOf(newLetter));
+            }
+            String changed = sb.toString();
+            Instant t1 = Instant.now();
+            closestWords.findMinWords(changed);
+            Duration elapsed = Duration.between(t1, Instant.now());
+            System.out.println("Found words within dist " + closestWords.closestDistance + " in " + elapsed.toNanos() / 1000 + "μs");
+
+        }
+    }
+
 
     public static void runTestsInCatalogue(String folder) {
         System.out.println("Processing folder: " + folder);

@@ -7,6 +7,7 @@ import java.util.List;
 
 public class ClosestWords {
     ArrayList<String> closestWords = new ArrayList<String>();
+    ArrayList<int[]> states = new ArrayList<int[]>();
     WordList wordList;
     Trie trie;
 
@@ -32,9 +33,13 @@ public class ClosestWords {
         return res;
     }
 
-    public void search(TrieNode node, String word, char letter, int[] last) {
+    public void search(TrieNode node, String word, char letter, int lastIdx) {
+        int[] last = states.get(lastIdx);
         int len = last.length;
-        var state = new int[len];
+        if (lastIdx == states.size() - 1) {
+            states.add(new int[last.length]);
+        }
+        var state = states.get(lastIdx + 1);
         state[0] = last[0] + 1;
         int min = Integer.MAX_VALUE;
         for (int i = 1; i < len; i++) {
@@ -55,10 +60,27 @@ public class ClosestWords {
         }
 
         if (min <= closestDistance) {
-            for (var next : node.children.entrySet()) {
-                var nextNode = next.getValue();
-                var nextLetter = next.getKey();
-                search(nextNode, word, nextLetter, state);
+            searchNext(node, min, word, lastIdx + 1);
+        }
+    }
+
+    void searchNext(TrieNode node, int min, String word, int stateIdx) {
+        if (min < closestDistance) {
+            for (int i = 0; i < node.length(); i++) {
+                var nextNode = node.getChild(i);
+                var nextLetter = node.getPrefix(i);
+                search(nextNode, word, nextLetter, stateIdx);
+            }
+        } else if (min == closestDistance) {
+            for (int i = 0; i < node.length(); i++) {
+                var nextNode = node.getChild(i);
+                var nextLetter = node.getPrefix(i);
+                for (int j = 1; j <= word.length(); j++) {
+                    if (nextLetter == word.charAt(j-1)) {
+                        search(nextNode, word, nextLetter, stateIdx);
+                        break;
+                    }
+                }
             }
         }
     }
@@ -103,21 +125,38 @@ public class ClosestWords {
         trie = new Trie(wordList.words);
     }
 
-    void findMinWords(String s, int startCost) {
+    void findMinWords(String s) {
         closestWords.clear();
-        closestDistance = startCost;
-        int[] startingState = new int[s.length()+1];
-        for (int i = 0; i < startingState.length; i++) {
-            startingState[i] = i;
-        }
-        for (var entry : trie.root.children.entrySet()) {
-            TrieNode node = entry.getValue();
-            Character letter = entry.getKey();
-            search(node, s, letter, startingState);
+        closestDistance = wordList.findClosestWordSize(s.length());
+        for (int i = 0; i < wordList.words.size(); i++) {
+            int dist = distance(s, wordList.words.get(i));
+            if (dist < closestDistance) {
+                closestDistance = dist;
+                closestWords.clear();
+                closestWords.add(wordList.words.get(i));
+            } else if (dist == closestDistance) {
+                closestWords.add(wordList.words.get(i));
+            }
         }
     }
 
-    void findMinWords(String s) {
+    void findMinWords(String s, int startCost) {
+        closestWords.clear();
+        closestDistance = startCost;
+        states.clear();
+        int[] startingState = new int[s.length()+1];
+        states.add(startingState);
+        for (int i = 0; i < startingState.length; i++) {
+            startingState[i] = i;
+        }
+        for (int i = 0; i < trie.root.length(); i++) {
+            TrieNode node = trie.root.getChild(i);
+            Character letter = trie.root.getPrefix(i);
+            search(node, s, letter, 0);
+        }
+    }
+
+    void _findMinWords(String s) {
         int worstCase = wordList.findClosestWordSize(s.length());
         for (int i = 1; i <= worstCase; i++) {
             findMinWords(s, i);
