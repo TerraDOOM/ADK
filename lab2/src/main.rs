@@ -1,6 +1,7 @@
 use std::{
-    collections::BinaryHeap,
+    collections::{BTreeSet, BinaryHeap},
     fs::File,
+    hint::unreachable_unchecked,
     io::{self, Read},
     mem,
     ops::Range,
@@ -43,6 +44,18 @@ struct Lev {
     cur: Vec<usize>,
 }
 
+impl Lev {
+    fn init(&mut self, n: usize) {
+        for i in 0..n {
+            self.last[i] = i;
+        }
+    }
+
+    fn swap(&mut self) {
+        mem::swap(&mut self.last, &mut self.cur);
+    }
+}
+
 impl Default for Lev {
     fn default() -> Self {
         let lev = Self {
@@ -53,159 +66,119 @@ impl Default for Lev {
     }
 }
 
-trait Metric {
-    // should be like f64 for generic metrics but we don't need that
-    // for this assignment
-    fn distance(&self, other: &Self) -> usize;
-    fn distance_max(&self, other: &Self, _max: usize) -> usize {
-        self.distance(other)
-    }
+#[derive(Default)]
+struct Trie<'a> {
+    children: Vec<(char, Trie<'a>)>,
+    word: Option<&'a str>,
 }
 
-impl Metric for str {
-    fn distance(&self, other: &str) -> usize {
-        edit_dist(self, other)
-    }
-}
-
-impl<T: ?Sized + Metric> Metric for &T {
-    fn distance(&self, other: &&T) -> usize {
-        <T as Metric>::distance(*self, *other)
-    }
-}
-
-#[derive(Debug)]
-enum VPNode<'a, T: Metric> {
-    Leaf(&'a [T]),
-    Branch {
-        point: &'a T,
-        inside: Box<VPNode<'a, T>>,
-        outside: Box<VPNode<'a, T>>,
-        threshold: usize,
-    },
-}
-
-#[derive(Debug)]
-struct VPTree<'a, T: Metric> {
-    root: VPNode<'a, T>,
-}
-
-fn partition<T: Metric>(pivot: &T, s: &mut [T]) {
-    // TODO: make a better partitioning scheme
-    s.sort_unstable_by_key(|x| pivot.distance(x));
-}
-
-const SMALL_THRESH: usize = 10;
-
-fn build_node<'a, T: Metric>(s: &'a mut [T]) -> VPNode<'a, T> {
-    if s.len() < SMALL_THRESH {
-        return VPNode::Leaf(&*s);
-    }
-
-    let random_partition = random_range(0..s.len());
-    s.swap(0, random_partition);
-    let mut ret;
-    {
-        let (first, rest) = s.split_first_mut().expect("Array was too small");
-        partition(first, rest);
-        // if all elements have the same distance, just skip the next part
-        ret = first.distance(&rest[0]) == first.distance(rest.last().unwrap());
-    }
-    if ret {
-        return VPNode::Leaf(&*s);
-    }
-
-    let (first, rest) = s.split_first_mut().unwrap();
-
-    let middle = rest.len() / 2;
-    let threshold = first.distance(&rest[middle]);
-    // normally this isn't particularly useful I don't think, but we
-    // have a lot of elements with the same distance.
-    let partition_point = rest.partition_point(|x| x.distance(first) < threshold);
-    let (inside, outside) = rest.split_at_mut(partition_point + 1);
-    VPNode::Branch {
-        point: first,
-        inside: Box::new(build_node(inside)),
-        outside: Box::new(build_node(outside)),
-        threshold,
-    }
-}
-
-impl<'a, T: Metric> VPTree<'a, T> {
-    fn new(v: &'a mut [T]) -> Self {
-        Self {
-            root: build_node(v),
+fn print_trie(node: &Trie, indent: usize) {
+    if let Some(terminal) = node.word {
+        for i in 0..indent {
+            print!("  ");
         }
+        println!("{terminal}");
+    }
+    for (pre, next) in &node.children {
+        for i in 0..indent {
+            print!("  ");
+        }
+        println!("{pre}");
+        print_trie(next, indent + 1);
+    }
+}
+
+impl<'a> Trie<'a> {
+    fn new() -> Self {
+        Self::default()
     }
 
-    pub fn search(&self, target: &T) -> Vec<&'a T> {
-        let mut tau = usize::MAX;
-        let mut results = Vec::new();
-        Self::search_rec(&self.root, target, &mut results, &mut tau);
-        results
-    }
+    fn add_inner(&mut self, s: &'a str, word: &'a str) {
+        let mut chars = s.chars();
+        let Some(first) = chars.next() else {
+            self.word = Some(word);
+            return;
+        };
+        let rest = chars.as_str();
 
-    fn search_rec(node: &VPNode<'a, T>, target: &T, results: &mut Vec<&'a T>, tau: &mut usize) {
-        let search = Self::search_rec;
-
-        match node {
-            VPNode::Leaf(v) => Self::linear_search(*v, target, results, tau),
-            VPNode::Branch {
-                point,
-                inside,
-                outside,
-                threshold,
-            } => {
-                let dist = target.distance(*point);
-                if dist <= *tau {
-                    if dist < *tau {
-                        results.clear();
-                        *tau = dist;
-                    }
-                    results.push(*point);
-                }
-                if dist < *threshold {
-                    if dist.saturating_sub(*tau) <= *threshold {
-                        search(&**inside, target, results, tau);
-                    }
-                    if dist + *tau >= *threshold {
-                        search(&**outside, target, results, tau);
-                    }
-                } else {
-                    if dist + *tau >= *threshold {
-                        search(&**outside, target, results, tau)
-                    }
-
-                    if dist.saturating_sub(*tau) <= *threshold {
-                        search(&**inside, target, results, tau)
-                    }
-                }
+        for (pre, child) in &mut self.children {
+            if *pre == first {
+                return child.add_inner(rest, word);
             }
         }
+        self.children.push((first, Trie::new()));
+        self.children.last_mut().unwrap().1.add_inner(rest, word);
     }
 
-    fn linear_search(v: &'a [T], target: &T, results: &mut Vec<&'a T>, tau: &mut usize) {
-        for x in v {
-            let dist = target.distance(x);
-            if dist < *tau {
-                *tau = dist;
-                results.clear();
-                results.push(x);
-            } else if dist == *tau {
-                results.push(x);
-            }
-        }
+    fn add(&mut self, s: &'a str) {
+        self.add_inner(s, s);
     }
 }
 
-impl Lev {
-    fn init(&mut self, n: usize) {
-        for j in 0..=n {
-            self.last[j] = j;
+struct LevTraversal<'a> {
+    trie: &'a Trie<'a>,
+    sizes: BTreeSet<usize>,
+    min_dist: u8,
+    min_words: Vec<&'a str>,
+}
+
+impl<'a> LevTraversal<'a> {
+    fn find(&mut self, word: &'a str) -> (usize, &[&'a str]) {
+        self.min_words.clear();
+        let init: Vec<_> = (0..=word.len() as u8).collect();
+
+        let min_max_size = self
+            .sizes
+            .iter()
+            .filter(|x| **x >= word.len())
+            .map(|x| *x)
+            .min()
+            .unwrap_or(word.len());
+        for i in 0..min_max_size {
+            self.min_dist = i as u8;
+            for (pre, next) in &self.trie.children {
+                self.search(next, word, *pre, &init[..]);
+            }
+            // println!("swept {i} for {word}, found: {:?}", self.min_words);
+            if !self.min_words.is_empty() {
+                break;
+            }
         }
+
+        (self.min_dist as usize, &self.min_words[..])
     }
-    fn swap(&mut self) {
-        mem::swap(&mut self.last, &mut self.cur);
+
+    fn search(&mut self, node: &Trie<'a>, word: &'a str, letter: char, last: &[u8]) {
+        let mut state = vec![0; last.len()];
+
+        state[0] = last[0] + 1;
+        let mut min = u8::MAX;
+        for i in 1..last.len() {
+            let cost = if word.chars().nth(i - 1) == Some(letter) {
+                0
+            } else {
+                1
+            };
+
+            state[i] = (last[i] + 1).min(state[i - 1] + 1).min(last[i - 1] + cost);
+            min = min.min(state[i]);
+        }
+        if node.word.is_some() && state[state.len() - 1] <= self.min_dist {
+            let Some(terminal) = node.word else { panic!() };
+            if state[state.len() - 1] < self.min_dist {
+                self.min_dist = state[state.len() - 1];
+                self.min_words.clear();
+            }
+            self.min_words.push(terminal);
+        }
+
+        // println!("at distance {min} on character {letter}");
+
+        if min <= self.min_dist {
+            for (pre, next) in &node.children {
+                self.search(next, word, *pre, &state[..]);
+            }
+        }
     }
 }
 
@@ -259,7 +232,6 @@ fn edit_dist_max<'a>(mut s: &'a str, mut t: &'a str, k: usize) -> usize {
     }
     let (m, n, s, t) = (m, n, s, t);
 
-    lev.init(n);
     // let mut last: Vec<_> = (0..=n).collect();
     // let mut cur = vec![0; n + 1];
 
@@ -276,7 +248,7 @@ fn edit_dist_max<'a>(mut s: &'a str, mut t: &'a str, k: usize) -> usize {
                 .min(lev.last[j - 1] + cost);
         }
         if i != m {
-            lev.swap();
+            mem::swap(&mut lev.cur, &mut lev.last);
         }
     }
     lev.cur[n]
@@ -285,66 +257,70 @@ fn edit_dist_max<'a>(mut s: &'a str, mut t: &'a str, k: usize) -> usize {
 fn main() {
     let start_linear = Instant::now();
 
-    let mut f = File::open("large/testmedordlista3.indata").expect("lol");
-    // let mut f = io::stdin().lock();
+    // let mut f = File::open("large/testmedordlista3.indata").expect("lol");
+    let mut f = io::stdin().lock();
     let mut s = String::new();
     f.read_to_string(&mut s).expect("lmao");
     let mut dictionary = Vec::new();
     let mut lines = s.lines();
+    let mut sizes = BTreeSet::new();
     for line in &mut lines {
         if line == "#" {
             break;
         } else {
             dictionary.push(line);
+            sizes.insert(line.len());
         }
     }
 
-    let dict2 = dictionary.clone();
     let start = Instant::now();
-    // let vp = VPTree::new(&mut dictionary[..]);
-    println!(
-        "building vp tree took {:.2} ms",
-        Instant::now().duration_since(start).as_secs_f64() * 1000.0
-    );
+    let mut trie = Trie::new();
+    for word in &dictionary {
+        trie.add(*word);
+    }
+    // print_trie(&trie, 0);
+    let mut lev = LevTraversal {
+        trie: &trie,
+        sizes,
+        min_dist: 0,
+        min_words: Vec::new(),
+    };
+    let finish = Instant::now().duration_since(start).as_secs_f64() * 1000.0;
+    //eprintln!("building trie took {:.2} ms", finish);
 
-    // println!("{vp:#?}");
-
-    let mut v = vec![];
+    // let mut v = vec![];
 
     for line in &mut lines {
-        let mut min_dist = 1000;
+        let start_vp = Instant::now();
+        let (min_dist_trie, res) = lev.find(line);
+        let finish_search = Instant::now().duration_since(start_vp).as_secs_f64() * 1000.0;
 
-        // let start_vp = Instant::now();
-        // let mut vp_res = vp.search(&line);
-        // println!(
-        //     "vp took {:.2} ms",
-        //     Instant::now().duration_since(start_vp).as_secs_f64() * 1000.0
-        // );
+        print_results(line, min_dist_trie, res);
+        eprintln!("trie took {:.2} ms", finish_search);
 
-        for word in &dict2 {
-            let dist = edit_dist_max(word, line, min_dist);
-            if dist < min_dist {
-                min_dist = dist;
-                v.clear();
-                v.push(word);
-            } else if dist == min_dist {
-                v.push(word);
-            }
-        }
+        // let mut min_dist = 1000;
+        // for &word in &dictionary {
+        //     let dist = edit_dist_max(word, line, min_dist);
+        //     if dist < min_dist {
+        //         min_dist = dist;
+        //         v.clear();
+        //         v.push(word);
+        //     } else if dist == min_dist {
+        //         v.push(word);
+        //     }
+        // }
 
-
-        // print_results(line, line.distance(vp_res[0]), &mut vp_res);
-        print_results(line, min_dist, &mut v);
+        // print_results(line, min_dist, &v[..]);
     }
-    println!(
-        "linear took {:.2} ms",
-        Instant::now().duration_since(start_linear).as_secs_f64() * 1000.0
-    );
+    // println!(
+    //     "linear took {:.2} ms",
+    //     Instant::now().duration_since(start_linear).as_secs_f64() * 1000.0
+    // );
 }
 
-fn print_results(line: &str, min_dist: usize, v: &mut Vec<&&str>) {
+fn print_results(line: &str, min_dist: usize, v: &[&str]) {
     print!("{line} ({min_dist})");
-    for word in v.drain(..) {
+    for word in v.iter() {
         print!(" {word}");
     }
     println!()
