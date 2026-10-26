@@ -6,8 +6,11 @@ import java.util.HashSet;
 import java.util.List;
 
 public class ClosestWords {
+    final static boolean useOptimism = true;
+
     ArrayList<String> closestWords = new ArrayList<String>();
     ArrayList<int[]> states = new ArrayList<int[]>();
+    int optimisticLen = 0;
     WordList wordList;
     Trie trie;
 
@@ -76,7 +79,7 @@ public class ClosestWords {
                 var nextNode = node.getChild(i);
                 var nextLetter = node.getPrefix(i);
                 for (int j = 1; j <= word.length(); j++) {
-                    if (nextLetter == word.charAt(j-1)) {
+                    if (nextLetter == word.charAt(j - 1)) {
                         search(nextNode, word, nextLetter, stateIdx);
                         break;
                     }
@@ -85,16 +88,18 @@ public class ClosestWords {
         }
     }
 
-    int levDynamic(String w1, String w2) {
+    int levDynamic(String w1, String w2, int max) {
         int m = w1.length();
         int n = w2.length();
 
         if (n > m) {
-            return levDynamic(w2, w1);
+            return levDynamic(w2, w1, max);
         }
 
         int[] last = new int[n + 1];
         int[] cur = new int[n + 1];
+
+        int min = 0;
 
         for (int i = 0; i <= n; i++) {
             last[i] = i;
@@ -103,11 +108,16 @@ public class ClosestWords {
 
         for (int i = 1; i <= m; i++) {
             cur[0] = i;
+            min = cur[0];
             for (int j = 1; j <= n; j++) {
                 int cost = w1.charAt(i - 1) == w2.charAt(j - 1) ? 0 : 1;
                 cur[j] = Math.min(last[j] + 1,
                         Math.min(cur[j - 1] + 1,
                                 last[j - 1] + cost));
+                min = Math.min(cur[j], min);
+            }
+            if (min > max) {
+                return min;
             }
             int[] tmp = last;
             last = cur;
@@ -116,8 +126,8 @@ public class ClosestWords {
         return last[n];
     }
 
-    int distance(String w1, String w2) {
-        return levDynamic(w1, w2);
+    int distance(String w1, String w2, int max) {
+        return levDynamic(w1, w2, max);
     }
 
     public ClosestWords(WordList _wordList) {
@@ -125,11 +135,50 @@ public class ClosestWords {
         trie = new Trie(wordList.words);
     }
 
+    TrieNode findOptimistic(String s) {
+        var node = trie.root;
+        for (optimisticLen = 0; optimisticLen < s.length(); optimisticLen++) {
+            var c = s.charAt(optimisticLen);
+            boolean cont = false;
+            for (int j = 0; j < node.length(); j++) {
+                if (c == node.getPrefix(j)) {
+                    node = node.getChild(j);
+                    cont = true;
+                    break;
+                }
+            }
+            if (!cont) {
+                break;
+            }
+        }
+        return node;
+    }
+
+    int trimPrefixIdx(String s, String word) {
+        int minLength = Math.min(s.length(), word.length());
+        int i = 0;
+        int j = 0;
+        while (s.charAt(i++) == word.charAt(j++)) {
+            if (i >= minLength)
+                break;
+        }
+        return i - 1;
+    }
+
     void findMinWords(String s) {
         closestWords.clear();
         closestDistance = wordList.findClosestWordSize(s.length());
         for (int i = 0; i < wordList.words.size(); i++) {
-            int dist = distance(s, wordList.words.get(i));
+            String word = wordList.words.get(i);
+            int prefixLen = trimPrefixIdx(s, word);
+            int dist;
+            if (prefixLen == s.length()) {
+                dist = word.length() - i;
+            } else if (prefixLen == word.length()) {
+                dist = s.length() - prefixLen;
+            } else {
+                dist = distance(s.substring(prefixLen), word.substring(prefixLen), closestDistance);
+            }
             if (dist < closestDistance) {
                 closestDistance = dist;
                 closestWords.clear();
@@ -156,11 +205,40 @@ public class ClosestWords {
         }
     }
 
+    void findMinWordsOptimistic(String s, TrieNode root, int startCost) {
+        closestWords.clear();
+        closestDistance = startCost;
+        states.clear();
+        int[] startingState = new int[s.length()+1];
+        states.add(startingState);
+        for (int i = 0; i < startingState.length; i++) {
+            startingState[i] = i;
+        }
+        for (int i = 0; i < root.length(); i++) {
+            TrieNode node = root.getChild(i);
+            Character letter = root.getPrefix(i);
+            search(node, s, letter, 0);
+        }
+    }
+
     void _findMinWords(String s) {
         int worstCase = wordList.findClosestWordSize(s.length());
+        var optimisticRoot = findOptimistic(s);
+        var optimisticString = s.substring(optimisticLen);
         for (int i = 1; i <= worstCase; i++) {
-            findMinWords(s, i);
-            if (!closestWords.isEmpty()) return;
+            if (useOptimism) {
+                boolean done = false;
+                findMinWordsOptimistic(optimisticString, optimisticRoot, i);
+                if (!closestWords.isEmpty())
+                    done = true;
+                closestWords.clear();
+                findMinWords(s, i);
+                if (done)
+                    return;
+            } else {
+                findMinWords(s, i);
+                if (!closestWords.isEmpty()) return;
+            }
         }
     }
 

@@ -4,11 +4,13 @@ public class TrieNode {
     public char[] prefix = null;
     public TrieNode[] children = null;
     public String terminal = null;
+    int size = 0;
 
     public TrieNode(String s, String word) {
         if (s.length() > 0) {
             children = new TrieNode[]{new TrieNode(s.substring(1), word)};
-            prefix = new char[]{s.charAt(0)};
+            prefix = new char[] { s.charAt(0) };
+            size += 1;
         } else {
             terminal = word;
         }
@@ -58,6 +60,7 @@ public class TrieNode {
             terminal = word;
             return;
         }
+        size += 1;
         if (prefix == null) {
             append(s.charAt(0), new TrieNode(s.substring(1), word));
             return;

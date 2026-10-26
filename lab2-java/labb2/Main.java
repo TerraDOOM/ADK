@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
@@ -130,8 +131,10 @@ public class Main {
         WordList wordList = readWordList(in);
         ClosestWords closestWords = new ClosestWords(wordList);
         Random rng = new Random();
-        char[] letters = {'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z','å','ä','ö'};
-
+        char[] letters = { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
+                's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'å', 'ä', 'ö' };
+        HashMap<Integer, ArrayList<Integer>> runtimes = new HashMap<Integer, ArrayList<Integer>>();
+        System.out.println("Trie size: " + closestWords.trie.root.size);
         for (int i = 0; i < count; i++) {
             int selectedWord = rng.nextInt(wordList.words.size());
             String word = wordList.words.get(selectedWord);
@@ -139,14 +142,44 @@ public class Main {
             for (int j = 0; j < 4; j++) {
                 int pos = rng.nextInt(word.length());
                 char newLetter = letters[rng.nextInt(letters.length)];
-                sb.replace(pos, pos+1, String.valueOf(newLetter));
+                sb.replace(pos, pos + 1, String.valueOf(newLetter));
             }
             String changed = sb.toString();
             Instant t1 = Instant.now();
             closestWords.findMinWords(changed);
             Duration elapsed = Duration.between(t1, Instant.now());
-            System.out.println("Found words within dist " + closestWords.closestDistance + " in " + elapsed.toNanos() / 1000 + "μs");
+            int elapsedMicros = (int) elapsed.toNanos() / 1000;
+            int foundAnswer = closestWords.closestDistance;
+            int foundCount = closestWords.closestWords.size();
+            closestWords._findMinWords(changed);
+            int correctAnswer = closestWords.closestDistance;
+            int correctCount = closestWords.closestWords.size();
+            if (correctAnswer != foundAnswer) {
+                System.err.println(
+                        "incorrect answer for " + changed + ": got " + foundAnswer + " expected " + correctAnswer);
 
+            }
+            if (correctCount != foundCount) {
+                System.err.println(
+                        "incorrect answer for " + changed + ": got " + foundCount + " expected " + correctCount);
+            }
+            if (!runtimes.containsKey(closestWords.closestDistance)) {
+                var list = new ArrayList<Integer>();
+                list.add(elapsedMicros);
+                runtimes.put(closestWords.closestDistance, list);
+            } else {
+                runtimes.get(closestWords.closestDistance).add(elapsedMicros);
+            }
+            System.out.println("Found words within dist " + closestWords.closestDistance + " in "
+                               + elapsed.toNanos() / 1000 + "μs " + (foundAnswer == correctAnswer && foundCount == correctCount ? "(correct)": "(incorrect)"));
+        }
+        for (var kv : runtimes.entrySet()) {
+            int total = 0;
+            for (var micros : kv.getValue()) {
+                total += micros;
+            }
+            double avg = (double) total / (double) kv.getValue().size();
+            System.err.println("Average time for distance " + kv.getKey() + ": " + avg + "μs");
         }
     }
 
@@ -216,7 +249,8 @@ public class Main {
                 String candidateDistance = "(" + closestWords.getMinDistance() + ")";
                 String rightDistance = it.next();
                 if (!candidateDistance.equals(rightDistance)) {
-                    System.out.println("Wrong minimum distance. Expected " + rightDistance + " and found " + candidateDistance);
+                    System.out.println(
+                            "Wrong minimum distance. Expected " + rightDistance + " and found " + candidateDistance);
                 }
                 for (String w : closestWords.getClosestWords()) {
                     if(!it.hasNext()) {
