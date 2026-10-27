@@ -203,7 +203,10 @@ fn edit_dist<'a>(mut s: &'a str, mut t: &'a str) -> usize {
     for (i, s_i) in s.chars().enumerate() {
         let i = i + 1;
         lev.cur[0] = i;
-        for (j, t_j) in t.chars().enumerate() {
+        for (j, t_j) in t
+            .chars()
+            .enumerate()
+        {
             let j = j + 1;
             let cost = if s_i == t_j { 0 } else { 1 };
 
@@ -231,6 +234,7 @@ fn edit_dist_max<'a>(mut s: &'a str, mut t: &'a str, k: usize) -> usize {
         mem::swap(&mut s, &mut t);
     }
     let (m, n, s, t) = (m, n, s, t);
+    lev.init(n);
 
     // let mut last: Vec<_> = (0..=n).collect();
     // let mut cur = vec![0; n + 1];
@@ -238,14 +242,24 @@ fn edit_dist_max<'a>(mut s: &'a str, mut t: &'a str, k: usize) -> usize {
     for (i, s_i) in s.chars().enumerate() {
         let i = i + 1;
         lev.cur[0] = i;
-        let mut min_row = i;
-        for (j, t_j) in t.chars().enumerate() {
+        let mut min = i;
+        for (j, t_j) in t
+            .chars()
+            .enumerate()
+            .skip(i.saturating_sub(k).saturating_sub(1).clamp(0, k))
+            .take(2 * k + 1)
+        {
             let j = j + 1;
             let cost = if s_i == t_j { 0 } else { 1 };
 
             lev.cur[j] = (lev.last[j] + 1)
                 .min(lev.cur[j - 1] + 1)
                 .min(lev.last[j - 1] + cost);
+            min = min.min(lev.cur[j]);
+        }
+        dbg!(&lev.cur[0..n]);
+        if min > k {
+            return min;
         }
         if i != m {
             mem::swap(&mut lev.cur, &mut lev.last);
@@ -274,43 +288,43 @@ fn main() {
     }
 
     let start = Instant::now();
-    let mut trie = Trie::new();
-    for word in &dictionary {
-        trie.add(*word);
-    }
-    // print_trie(&trie, 0);
-    let mut lev = LevTraversal {
-        trie: &trie,
-        sizes,
-        min_dist: 0,
-        min_words: Vec::new(),
-    };
-    let finish = Instant::now().duration_since(start).as_secs_f64() * 1000.0;
+    // let mut trie = Trie::new();
+    // for word in &dictionary {
+    //     trie.add(*word);
+    // }
+    // // print_trie(&trie, 0);
+    // let mut lev = LevTraversal {
+    //     trie: &trie,
+    //     sizes,
+    //     min_dist: 0,
+    //     min_words: Vec::new(),
+    // };
+    // let finish = Instant::now().duration_since(start).as_secs_f64() * 1000.0;
     //eprintln!("building trie took {:.2} ms", finish);
 
-    // let mut v = vec![];
+    let mut v = vec![];
 
     for line in &mut lines {
-        let start_vp = Instant::now();
-        let (min_dist_trie, res) = lev.find(line);
-        let finish_search = Instant::now().duration_since(start_vp).as_secs_f64() * 1000.0;
+        // let start_vp = Instant::now();
+        // let (min_dist_trie, res) = lev.find(line);
+        // let finish_search = Instant::now().duration_since(start_vp).as_secs_f64() * 1000.0;
 
-        print_results(line, min_dist_trie, res);
-        eprintln!("trie took {:.2} ms", finish_search);
+        // print_results(line, min_dist_trie, res);
+        // eprintln!("trie took {:.2} ms", finish_search);
 
-        // let mut min_dist = 1000;
-        // for &word in &dictionary {
-        //     let dist = edit_dist_max(word, line, min_dist);
-        //     if dist < min_dist {
-        //         min_dist = dist;
-        //         v.clear();
-        //         v.push(word);
-        //     } else if dist == min_dist {
-        //         v.push(word);
-        //     }
-        // }
+        let mut min_dist = 40;
+        for &word in &dictionary {
+            let dist = dbg!(edit_dist_max(dbg!(word), line, min_dist));
+            if dist < min_dist {
+                min_dist = dist;
+                v.clear();
+                v.push(word);
+            } else if dist == min_dist {
+                v.push(word);
+            }
+        }
 
-        // print_results(line, min_dist, &v[..]);
+        print_results(line, min_dist, &v[..]);
     }
     // println!(
     //     "linear took {:.2} ms",

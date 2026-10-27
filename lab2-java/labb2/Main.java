@@ -40,6 +40,7 @@ public class Main {
         if (parseArgs(args)) {
             System.exit(0);
         }
+
         long t1 = System.currentTimeMillis();
         BufferedReader stdin = new BufferedReader(new InputStreamReader(System.in, "UTF-8"));
         // Säkrast att specificera att UTF-8 ska användas, för vissa system har annan
@@ -47,18 +48,22 @@ public class Main {
         WordList wordList = readWordList(stdin);
         String word;
         ClosestWords closestWords = new ClosestWords(wordList);
-        if (PRINT_TIMINGS) System.out.println("built trie in " + (System.currentTimeMillis() - t1) + " ms");
-        if (PRINT_TIMINGS && wordList.words.size() < 20) closestWords.trie.root.print();
-        while ((word = stdin.readLine()) != null) {
-            long innerTime = System.currentTimeMillis();
-            closestWords.findMinWords(word);
-            if (PRINT_TIMINGS) System.out.println("found solutions for " + word + " in " + (System.currentTimeMillis() - innerTime) + " ms");
-            System.out.print(word + " (" + closestWords.getMinDistance() + ")");
-            for (String w : closestWords.getClosestWords())
-                System.out.print(" " + w);
-            System.out.println();
-        }
-        long tottime = (System.currentTimeMillis() - t1);
+        if (PRINT_TIMINGS)
+           System.out.println("built trie in " + (System.currentTimeMillis() - t1) + " ms");
+       if (PRINT_TIMINGS && wordList.words.size() < 20)
+           closestWords.trie.root.print();
+       while ((word = stdin.readLine()) != null) {
+           long innerTime = System.currentTimeMillis();
+           closestWords.findMinWords(word);
+           if (PRINT_TIMINGS)
+               System.out.println(
+                       "found solutions for " + word + " in " + (System.currentTimeMillis() - innerTime) + " ms");
+           System.out.print(word + " (" + closestWords.getMinDistance() + ")");
+           for (String w : closestWords.getClosestWords())
+               System.out.print(" " + w);
+           System.out.println();
+       }
+       long tottime = (System.currentTimeMillis() - t1);
         if (PRINT_TIMINGS) System.out.println("total CPU time: " + tottime + " ms");
     }
 
@@ -235,7 +240,7 @@ public class Main {
             ClosestWords closestWords = new ClosestWords(wordList);
 
             while ((word = inFile.readLine()) != null) {
-                closestWords.findMinWords(word);
+                closestWords.findMinWordsBk(word);
                 String answerLine;
                 if ((answerLine = ansFile.readLine()) == null) {
                     System.err.println("The file " + ans + " ran out of answers but there were questions left in " + in + ".");

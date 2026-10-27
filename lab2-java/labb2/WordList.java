@@ -8,7 +8,7 @@ public class WordList {
     public WordList(ArrayList<String> _words) {
         var cmp = new StupidComparatorThatIHate();
         words = _words;
-        words.sort(cmp);
+        // words.sort(cmp);
         offsets = new ArrayList<Integer>();
         int currentSize = 0;
         for (int i = 0; i < words.size(); i++) {
@@ -23,7 +23,7 @@ public class WordList {
     public int findClosestWordSize(int size) {
         int maxSize = words.get(words.size() - 1).length();
         if (maxSize <= size) {
-            return maxSize;
+            return size;
         }
 
         for (int i = 0; i < offsets.size(); i++) {

@@ -2,8 +2,6 @@
 /* Se labbinstruktionerna i kursrummet i Canvas                  */
 /* Ursprunglig författare: Viggo Kann KTH viggo@kth.se           */
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
 
 public class ClosestWords {
     final static boolean useOptimism = true;
@@ -13,11 +11,20 @@ public class ClosestWords {
     int optimisticLen = 0;
     WordList wordList;
     Trie trie;
+    BkTree bk;
 
     int closestDistance;
 
-    public Trie buildTrie(WordList list) {
-        return new Trie(list.words);
+    int[] levDynamicA = new int[41];
+    int[] levDynamicB = new int[41];
+
+    LevMatrix mat = new LevMatrix();
+
+    public void buildBkTree(WordList list) {
+        bk = new BkTree();
+        for (var word : list.words) {
+            bk.insert(word);
+        }
     }
 
     static int partDist(String w1, String w2, int w1len, int w2len) {
@@ -96,10 +103,11 @@ public class ClosestWords {
             return levDynamic(w2, w1, max);
         }
 
-        int[] last = new int[n + 1];
-        int[] cur = new int[n + 1];
+        int[] last = levDynamicA;
+        int[] cur = levDynamicB;
 
         int min = 0;
+        int minj = 0;
 
         for (int i = 0; i <= n; i++) {
             last[i] = i;
@@ -109,12 +117,15 @@ public class ClosestWords {
         for (int i = 1; i <= m; i++) {
             cur[0] = i;
             min = cur[0];
-            for (int j = 1; j <= n; j++) {
+            for (int j = Math.clamp(i - max - 1, 1, n); j <= Math.clamp(i + max, 1, n); j++) {
                 int cost = w1.charAt(i - 1) == w2.charAt(j - 1) ? 0 : 1;
                 cur[j] = Math.min(last[j] + 1,
                         Math.min(cur[j - 1] + 1,
                                 last[j - 1] + cost));
-                min = Math.min(cur[j], min);
+                if (cur[j] < min) {
+                    minj = j;
+                    min = cur[j];
+                }
             }
             if (min > max) {
                 return min;
@@ -126,13 +137,18 @@ public class ClosestWords {
         return last[n];
     }
 
-    int distance(String w1, String w2, int max) {
-        return levDynamic(w1, w2, max);
+    int distance(String word, String search, int max) {
+        // int dist = levDynamic(w1, w2, max);
+        // return dist == -1 ? 40 : dist;
+
+        int dist = mat.levDynamic(word, search, max);
+        return dist;
     }
 
     public ClosestWords(WordList _wordList) {
         wordList = _wordList;
-        trie = new Trie(wordList.words);
+        // trie = new Trie(wordList.words);
+        // buildBkTree(_wordList);
     }
 
     TrieNode findOptimistic(String s) {
@@ -167,25 +183,39 @@ public class ClosestWords {
 
     void findMinWords(String s) {
         closestWords.clear();
-        closestDistance = wordList.findClosestWordSize(s.length());
+        closestDistance = 40; // wordList.findClosestWordSize(s.length());
         for (int i = 0; i < wordList.words.size(); i++) {
             String word = wordList.words.get(i);
-            int prefixLen = trimPrefixIdx(s, word);
-            int dist;
-            if (prefixLen == s.length()) {
-                dist = word.length() - i;
-            } else if (prefixLen == word.length()) {
-                dist = s.length() - prefixLen;
-            } else {
-                dist = distance(s.substring(prefixLen), word.substring(prefixLen), closestDistance);
-            }
+            int dist = mat.levDynamic(word, s, closestDistance);
+            // mat.print(s);
             if (dist < closestDistance) {
-                closestDistance = dist;
+                // System.err.println("found closer word " + word + " at distance " + dist);
+                // System.err.println("last word " + wordList.words.get(Math.max(i - 1, 0)) + " at distance " + dist);
+                // mat.print(s);
                 closestWords.clear();
-                closestWords.add(wordList.words.get(i));
-            } else if (dist == closestDistance) {
-                closestWords.add(wordList.words.get(i));
+                closestDistance = dist;
             }
+            if (dist <= closestDistance) {
+                closestWords.add(word);
+            }
+
+            // int prefixLen = trimPrefixIdx(s, word);
+            // prefixLen = 0;
+            // int dist;
+            // if (prefixLen == s.length()) {
+            //     dist = word.length() - i;
+            // } else if (prefixLen == word.length()) {
+            //     dist = s.length() - prefixLen;
+            // } else {
+            //     dist = distance(s.substring(prefixLen), word.substring(prefixLen), closestDistance);
+            // }
+            // if (dist < closestDistance) {
+            //     closestDistance = dist;
+            //     closestWords.clear();
+            //     closestWords.add(wordList.words.get(i));
+            // } else if (dist == closestDistance) {
+            //     closestWords.add(wordList.words.get(i));
+            // }
         }
     }
 
@@ -240,6 +270,24 @@ public class ClosestWords {
                 if (!closestWords.isEmpty()) return;
             }
         }
+    }
+
+    void findMinWordsBk(String s) {
+        int worstCase = wordList.findClosestWordSize(s.length());
+        for (int i = 0; i < Math.min(worstCase, 3); i++) {
+            closestWords = bk.search(s, i);
+            if (closestWords.isEmpty()) {
+                continue;
+            } else {
+                break;
+            }
+        }
+        if (closestWords.isEmpty()) {
+            findMinWords(s);
+            return;
+        }
+
+        closestDistance = levDynamic(s, closestWords.get(0), worstCase);
     }
 
     int getMinDistance() {
