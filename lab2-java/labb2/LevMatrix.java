@@ -1,24 +1,16 @@
 class LevMatrix {
-    int[] mat = new int[41 * 41];
+    byte[] mat = new byte[41 * 41];
     String last = "";
     String lastSearch = null;
     int lastEnd = 40;
     int lastCost = 0;
 
-    public void set(int i, int j, int v) {
-        mat[i * 41 + j] = v;
-    }
-
-    public int get(int i, int j) {
-        return mat[i * 41 + j];
-    }
-
     public LevMatrix() {
-        for (int j = 0; j < 41; j++) {
-            set(0, j, j);
+        for (byte j = 0; j < 41; j++) {
+            mat[0 * 41 + j] = j;
         }
-        for (int i = 0; i < 41; i++) {
-            set(i, 0, i);
+        for (byte i = 0; i < 41; i++) {
+            mat[i * 41 + 0] = i;
         }
     }
 
@@ -30,23 +22,20 @@ class LevMatrix {
         int n = search.length();
 
         int prefixLen = 0;
-        if (search == lastSearch) {
-            for (prefixLen = 0; prefixLen < Math.min(word.length(), last.length())
-                     && word.charAt(prefixLen) == last.charAt(prefixLen); prefixLen++)
-                ;
-        }
-        lastSearch = search;
+        for (prefixLen = 0; prefixLen < Math.min(word.length(), last.length())
+                 && word.charAt(prefixLen) == last.charAt(prefixLen); prefixLen++)
+            ;
         int min = 0;
 
-        for (int i = Math.clamp(prefixLen, 1, Math.min(m, lastEnd)); i <= m; i++) {
-            min = get(i, 0);
+        for (int i = Math.clamp(prefixLen+1, 1, Math.min(m, lastEnd)); i <= m; i++) {
+            min = mat[i * 41 + 0];
             for (int j = 1; j <= n; j++) {
                 int cost = word.charAt(i - 1) == search.charAt(j - 1) ? 0 : 1;
 
-                int val = Math.min(get(i-1, j) + 1,
-                                   Math.min(get(i, j-1) + 1,
-                                            get(i-1, j-1) + cost));
-                set(i, j, val);
+                byte val = (byte)Math.min(mat[(i-1) * 41 + j] + 1,
+                                          Math.min(mat[i * 41 + j - 1] + 1,
+                                                   mat[(i - 1) * 41 + j - 1] + cost));
+                mat[i * 41 + j] = val;
                 min = Math.min(min, val);
             }
             if (min > max) {
@@ -58,7 +47,7 @@ class LevMatrix {
 
         lastEnd = word.length();
         last = word;
-        return get(m, n);
+        return mat[m * 41 + n];
     }
 
     public void print(String search) {
@@ -75,7 +64,7 @@ class LevMatrix {
                 System.out.print("   ");
             }
             for (int j = 0; j <= Math.max(last.length(), search.length()); j++) {
-                System.out.printf("%3d", get(i, j));
+                System.out.printf("%3d", mat[i * 41 + j]);
             }
             System.out.println();
         }

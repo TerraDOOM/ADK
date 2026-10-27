@@ -5,16 +5,13 @@ import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.File;
-import java.io.FileReader;
 import java.io.InputStreamReader;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Random;
 
 public class Main {
@@ -49,9 +46,7 @@ public class Main {
         String word;
         ClosestWords closestWords = new ClosestWords(wordList);
         if (PRINT_TIMINGS)
-           System.out.println("built trie in " + (System.currentTimeMillis() - t1) + " ms");
-       if (PRINT_TIMINGS && wordList.words.size() < 20)
-           closestWords.trie.root.print();
+           System.out.println("did setup in " + (System.currentTimeMillis() - t1) + " ms");
        while ((word = stdin.readLine()) != null) {
            long innerTime = System.currentTimeMillis();
            closestWords.findMinWords(word);
@@ -139,7 +134,6 @@ public class Main {
         char[] letters = { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
                 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'å', 'ä', 'ö' };
         HashMap<Integer, ArrayList<Integer>> runtimes = new HashMap<Integer, ArrayList<Integer>>();
-        System.out.println("Trie size: " + closestWords.trie.root.size);
         for (int i = 0; i < count; i++) {
             int selectedWord = rng.nextInt(wordList.words.size());
             String word = wordList.words.get(selectedWord);
@@ -156,7 +150,7 @@ public class Main {
             int elapsedMicros = (int) elapsed.toNanos() / 1000;
             int foundAnswer = closestWords.closestDistance;
             int foundCount = closestWords.closestWords.size();
-            closestWords._findMinWords(changed);
+            closestWords.findMinWords(changed);
             int correctAnswer = closestWords.closestDistance;
             int correctCount = closestWords.closestWords.size();
             if (correctAnswer != foundAnswer) {
@@ -240,7 +234,7 @@ public class Main {
             ClosestWords closestWords = new ClosestWords(wordList);
 
             while ((word = inFile.readLine()) != null) {
-                closestWords.findMinWordsBk(word);
+                closestWords.findMinWords(word);
                 String answerLine;
                 if ((answerLine = ansFile.readLine()) == null) {
                     System.err.println("The file " + ans + " ran out of answers but there were questions left in " + in + ".");
