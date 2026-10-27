@@ -28,7 +28,7 @@ class LevMatrix {
         int min = 0;
 
         for (int i = Math.clamp(prefixLen+1, 1, Math.min(m, lastEnd)); i <= m; i++) {
-            min = mat[i * 41 + 0];
+            min = i;
             for (int j = 1; j <= n; j++) {
                 int cost = word.charAt(i - 1) == search.charAt(j - 1) ? 0 : 1;
 
