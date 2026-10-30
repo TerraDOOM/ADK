@@ -1,7 +1,6 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, BufRead, Write};
 use std::{cmp, mem};
-
 
 #[derive(Clone, Default)]
 struct Graph {
@@ -9,8 +8,8 @@ struct Graph {
     t: usize,
     flow: usize,
     node_count: usize,
-    neighbormap: BTreeMap<usize, Vec<(usize, usize)>>,
-    edgemap: BTreeMap<(usize, usize), usize>,
+    neighbormap: HashMap<usize, Vec<(usize, usize)>>,
+    edgemap: HashMap<(usize, usize), usize>,
 }
 
 impl std::ops::IndexMut<(Node, Node)> for Graph {
@@ -32,7 +31,7 @@ impl std::ops::Index<(Node, Node)> for Graph {
 impl std::ops::IndexMut<Edge> for Graph {
     fn index_mut(&mut self, e: Edge) -> &mut Self::Output {
         self.edgemap
-            .get_mut(&(e.u.0, e.v.0))
+            .get_mut(&(e.src.0, e.dst.0))
             .expect("Failed to find key in edgemap")
     }
 }
@@ -41,12 +40,19 @@ impl std::ops::Index<Edge> for Graph {
     type Output = usize;
 
     fn index(&self, e: Edge) -> &Self::Output {
-        &self.edgemap[&(e.u.0, e.v.0)]
+        &self.edgemap[&(e.src.0, e.dst.0)]
     }
 }
 
+impl std::ops::Index<&Edge> for Graph {
+    type Output = usize;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    fn index(&self, e: &Edge) -> &Self::Output {
+        &self.edgemap[&(e.src.0, e.dst.0)]
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 struct Node(usize);
 
 #[derive(Debug, PartialEq, Eq)]
@@ -56,21 +62,21 @@ struct EdgeMut<'a> {
     val: &'a mut usize,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 struct Edge {
-    u: Node,
-    v: Node,
+    src: Node,
+    dst: Node,
 }
 
 impl std::fmt::Debug for Edge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}->{}", self.u.0, self.v.0)
+        write!(f, "{}->{}", self.src.0, self.dst.0)
     }
 }
 
 impl Edge {
     fn rev(mut self) -> Self {
-        mem::swap(&mut self.u, &mut self.v);
+        mem::swap(&mut self.src, &mut self.dst);
         self
     }
 }
@@ -82,12 +88,12 @@ impl Graph {
             t: 0,
             flow: 0,
             node_count: 0,
-            edgemap: BTreeMap::default(),
-            neighbormap: BTreeMap::default(),
+            edgemap: HashMap::default(),
+            neighbormap: HashMap::default(),
         }
     }
     fn make_undirected(&mut self) {
-        let mut new_map = BTreeMap::new();
+        let mut new_map = HashMap::new();
         for (&(u, v), &val) in self.edgemap.iter() {
             new_map.insert((u, v), val);
             new_map.insert((v, u), val);
@@ -111,7 +117,9 @@ impl Graph {
         self.edgemap.insert((u, v), val);
     }
     fn delete_edge(&mut self, Node(u): Node, Node(v): Node) {
-        self.neighbormap.get_mut(&u).map(|x| x.retain(|x| *x != (u, v)));
+        self.neighbormap
+            .get_mut(&u)
+            .map(|x| x.retain(|x| *x != (u, v)));
         self.edgemap.remove(&(u, v));
     }
 
@@ -125,14 +133,21 @@ impl Graph {
 
     fn edges<'a>(&'a self) -> impl Iterator<Item = Edge> + 'a {
         self.edgemap.iter().map(|(&(u, v), _)| Edge {
-            u: Node(u),
-            v: Node(v),
+            src: Node(u),
+            dst: Node(v),
         })
     }
 
     fn neighbors<'a>(&'a self, Node(n): Node) -> impl Iterator<Item = Edge> + 'a {
         static EMPTY: Vec<(usize, usize)> = Vec::new();
-        self.neighbormap.get(&n).unwrap_or(&EMPTY).iter().map(|&(u, v)| Edge { u: Node(u), v: Node(v) })
+        self.neighbormap
+            .get(&n)
+            .unwrap_or(&EMPTY)
+            .iter()
+            .map(|&(u, v)| Edge {
+                src: Node(u),
+                dst: Node(v),
+            })
     }
 
     #[allow(dead_code)]
@@ -150,7 +165,11 @@ impl Graph {
         } else {
             String::new()
         };
-        let n_edges = if print_flow { nodes.iter().filter(|(_, v)| **v > 0).count()  } else { nodes.len() };
+        let n_edges = if print_flow {
+            nodes.iter().filter(|(_, v)| **v > 0).count()
+        } else {
+            nodes.len()
+        };
         writeln!(
             &mut out,
             "{node_count}\n\
@@ -159,7 +178,9 @@ impl Graph {
         )?;
 
         for ((u, v), val) in nodes.iter() {
-            if *val == 0 { continue; }
+            if *val == 0 {
+                continue;
+            }
             writeln!(out, "{u} {v} {val}")?;
         }
         out.flush()?;
@@ -189,17 +210,20 @@ impl Graph {
 
     #[allow(dead_code)]
     fn read<R: BufRead>(rdr: R) -> Option<Self> {
-        let mut lines = LineReader {  rdr, line: String::new() };
+        let mut lines = LineReader {
+            rdr,
+            line: String::new(),
+        };
 
         let node_count = lines.advance()()?;
         let (s, t, flow) = {
             let mut next_int = lines.advance();
-            let s = next_int()?;
-            let t = next_int()?;
+            let s = next_int().expect("missing s");
+            let t = next_int().expect("missing t");
             let flow = next_int().unwrap_or(0);
             (s, t, flow)
         };
-        let n_edges = lines.advance()()?;
+        let n_edges = lines.advance()().expect("missing n edges");
         let mut g = Graph {
             s,
             t,
@@ -209,12 +233,16 @@ impl Graph {
         };
         for _ in 0..n_edges {
             let mut next_int = lines.advance();
-            let u = next_int()?;
-            let v = next_int()?;
+            let u = next_int().expect("missing u");
+            let v = next_int().expect("missing v");
             let t = next_int().unwrap_or(0);
             g.add_edge(Node(u), Node(v), t);
         }
         Some(g)
+    }
+
+    fn contains(&self, e: Edge) -> bool {
+        self.edgemap.contains_key(&(e.src.0, e.dst.0))
     }
 }
 
@@ -234,57 +262,40 @@ fn solve_flow(c: &Graph) -> Graph {
     c.make_undirected();
 
     let mut q = VecDeque::new();
-    let mut pred = vec![None; c.node_count + 1];
+    let mut path = vec![None; c.node_count + 1];
     let mut flow = 0;
 
-    dbg!((s, t));
-
     loop {
-        pred.fill(None);
+        path.fill(None);
         q.clear();
         q.push_back(s);
-        while !q.is_empty() && pred[t.0].is_none() {
+        while !q.is_empty() && path[t.0].is_none() {
             let cur = q.pop_front().unwrap();
             for e in f.neighbors(cur) {
-                if pred[e.v.0].is_none() && e.v != s && f[e] < c[e] {
-                    pred[e.v.0] = Some(e);
-                    q.push_back(e.v);
+                if path[e.dst.0].is_none() && e.dst != s && f[e] < c[e] {
+                    path[e.dst.0] = Some(e);
+                    q.push_back(e.dst);
                 }
             }
         }
 
-        if pred[t.0].is_some() {
+        if path[t.0].is_some() {
             let mut df = usize::MAX;
-            let mut cur = pred[t.0];
+            let mut cur = path[t.0];
             while let Some(e) = cur {
                 df = cmp::min(df, c[e] - f[e]);
-                cur = pred[e.u.0];
+                cur = path[e.src.0];
             }
-            let mut cur = pred[t.0];
-            dbg!(df);
+            let mut cur = path[t.0];
             while let Some(e) = cur {
-                dbg!(e);
-                dbg!(f[e]);
-                dbg!(c[e]);
-                f[e] = f[e] + df;
-                f[e.rev()] = f[e.rev()] - df;
-                cur = pred[e.u.0];
+                f[e] += df;
+                f[e.rev()] -= df;
+                cur = path[e.src.0];
             }
             flow += df;
-
-            for e in f.edges() {
-                if f[e] + f[e.rev()] > c[e] {
-                    dbg!(e);
-                    dbg!(e.rev());
-                    dbg!(&f[e]); dbg!(&f[e.rev()]); dbg!(&c[e]);
-
-                }
-                assert!(f[e] + f[e.rev()] <= c[e]);
-            }
         } else {
             break;
         }
-
     }
 
     f.flow = flow;
@@ -302,14 +313,19 @@ struct LineReader<R: BufRead> {
 impl<R: BufRead> LineReader<R> {
     fn advance<'a>(&'a mut self) -> impl 'a + FnMut() -> Option<usize> {
         self.line.clear();
-        self.rdr.read_line(&mut self.line).expect("couldn't read line");
+        self.rdr
+            .read_line(&mut self.line)
+            .expect("couldn't read line");
         let mut split = self.line.split_whitespace();
         move || -> Option<usize> { split.next()?.parse().ok() }
     }
 }
 
 fn read_matching_problem<R: BufRead>(input: R) -> (Graph, usize) {
-    let mut lines = LineReader { rdr: input, line: String::new() };
+    let mut lines = LineReader {
+        rdr: input,
+        line: String::new(),
+    };
     let (x, y);
     {
         let mut next_int = lines.advance();
@@ -355,9 +371,15 @@ fn to_matching_solution(mut g: Graph) -> Vec<(Node, Node)> {
     let s = Node(g.s);
     let t = Node(g.t);
     for EdgeMut { u, v, val } in g.edges_mut() {
-        if *val == 0 { continue; }
-        if u == s || u == t { continue; }
-        if v == s || v == t { continue; }
+        if *val == 0 {
+            continue;
+        }
+        if u == s || u == t {
+            continue;
+        }
+        if v == s || v == t {
+            continue;
+        }
         matching.push((u, v))
     }
     matching
@@ -377,7 +399,9 @@ fn run() -> Option<()> {
 
         let (match_g, match_x) = read_matching_problem(io::stdin().lock());
         let flow_problem = create_flow_problem(&match_g, match_x);
-        flow_problem.print(io::stdout(), false).expect("failed printing");
+        flow_problem
+            .print(io::stdout(), false)
+            .expect("failed printing");
         let flow_solution = Graph::read(io::stdin().lock()).expect("failed to make flow solution");
         let solution = to_matching_solution(flow_solution);
         let x = match_x;
@@ -389,8 +413,10 @@ fn run() -> Option<()> {
         }
     } else if FLOW && !MATCH {
         // flow code
-        let flow_problem = Graph::read(io::stdin().lock()).expect("failed to make flow solution");
-        let solution = solve_flow(&flow_problem);
+        let mut flow_problem = Graph::read(io::stdin().lock()).expect("failed to make flow solution");
+        let fix_info = fix_flow_problem(&mut flow_problem);
+        let mut solution = solve_flow(&flow_problem);
+        unfix_flow_problem(&mut solution, fix_info);
         solution.print(io::stdout(), true).expect("failed printing");
     } else if COMBINE {
         let (match_g, match_x) = read_matching_problem(io::stdin().lock());
@@ -398,10 +424,12 @@ fn run() -> Option<()> {
         let flow_problem = create_flow_problem(&match_g, match_x);
         // flow_problem.print(io::stdout(), true);
         let flow_solution = solve_flow(&flow_problem);
-        flow_solution.print(io::stdout().lock(), true);
+        // println!("============ flow solution ============");
+        // flow_solution.print(io::stdout().lock(), true);
         let match_solution = to_matching_solution(flow_solution);
         let x = match_x;
         let y = match_g.node_count - x;
+        // println!("============ match solution ============");
         println!("{x} {y}");
         println!("{}", match_solution.len());
         for (Node(u), Node(v)) in match_solution {
@@ -410,6 +438,50 @@ fn run() -> Option<()> {
     }
 
     Some(())
+}
+
+fn unfix_flow_problem(g: &mut Graph, fix_info: FixInfo) {
+    let (og_count, to_fix, phantom) = fix_info;
+
+    for edge in to_fix {
+        g.add_edge(edge.src, edge.dst, 0);
+    }
+
+    for (_, e1, e2) in phantom {
+        if g.contains(e2) {
+            g[(e1.src, e2.dst)] = g[e2];
+        }
+        g.delete_edge(e1.src, e1.dst);
+        g.delete_edge(e2.src, e2.dst);
+    }
+    g.node_count = og_count;
+}
+
+type FixInfo = (usize, Vec<Edge>, Vec<(Node, Edge, Edge)>);
+
+fn fix_flow_problem(g: &mut Graph) -> FixInfo {
+    let og_count = g.node_count;
+    let mut to_fix = vec![];
+    let mut skip = HashSet::new();
+
+    for e in g.edges() {
+        if g.contains(e.rev()) && !skip.contains(&e.rev()) {
+            skip.insert(e);
+            to_fix.push(e.rev());
+        }
+    }
+
+    let mut fixinfo = vec![];
+
+    for fix in &to_fix {
+        let new = g.add_node();
+        fixinfo.push((new, Edge { src: fix.src, dst: new }, Edge { src: new, dst: fix.dst }));
+        g.add_edge(fix.src, new, g[fix]);
+        g.add_edge(new, fix.dst, g[fix]);
+        g.delete_edge(fix.src, fix.dst);
+    }
+
+    (og_count, to_fix, fixinfo)
 }
 
 #[cfg(test)]
@@ -421,8 +493,6 @@ mod tests {
     // const FLOW_OUT: &'static str = include_str!("../test-materials/testfall/bfstest.utdata");
     const FLOW_IN: &'static str = include_str!("flow_in.txt");
     const FLOW_OUT: &'static str = include_str!("flow_out.txt");
-
-
 
     #[test]
     fn test_example() {
