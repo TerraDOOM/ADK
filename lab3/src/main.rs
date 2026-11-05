@@ -367,7 +367,7 @@ fn create_flow_problem(g: &Graph, x: usize) -> Graph {
 }
 
 fn to_matching_solution(mut g: Graph) -> Vec<(Node, Node)> {
-    let mut matching = Vec::with_capacity(4000);
+    let mut matching = Vec::with_capacity(10000);
     let s = Node(g.s);
     let t = Node(g.t);
     for EdgeMut { u, v, val } in g.edges_mut() {
